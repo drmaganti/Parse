@@ -1,0 +1,53 @@
+{
+  "_comment": "Parse-quality eval set. Explicit cases assert exact filters+ranking; vague cases require the parser to translate the intent and record an assumption. Expand this as you find real queries that parse badly — it's the record that justifies any model or routing change.",
+  "cases": [
+    {
+      "query": "Cheap large caps with a P/E under 15",
+      "expect": { "filters": [{ "field": "pe", "op": "<", "value": 15 }], "ranking": "value" }
+    },
+    {
+      "query": "Dividend stocks yielding over 4%",
+      "expect": { "filters": [{ "field": "divYield", "op": ">", "value": 4 }], "ranking": "dividend" }
+    },
+    {
+      "query": "Companies growing revenue more than 20% a year",
+      "expect": { "filters": [{ "field": "revGrowth", "op": ">", "value": 20 }], "ranking": "quality" }
+    },
+    {
+      "query": "Technology names near their 52-week highs",
+      "expect": { "filters": [{ "field": "sector", "op": "==", "value": "Technology" }], "ranking": "momentum" }
+    },
+    {
+      "query": "Large caps that have fallen this week",
+      "expect": { "filters": [{ "field": "chg1w", "op": "<", "value": 0 }], "ranking": "decline" }
+    },
+    {
+      "query": "Healthcare stocks with a market cap over 100 billion",
+      "expect": { "filters": [{ "field": "sector", "op": "==", "value": "Healthcare" }, { "field": "marketCap", "op": ">", "value": 100 }] }
+    },
+    {
+      "query": "Low P/B financials",
+      "expect": { "filters": [{ "field": "pb", "op": "<", "value": 3 }, { "field": "sector", "op": "==", "value": "Financials" }], "ranking": "value" }
+    },
+    {
+      "query": "Oversold names with RSI below 30",
+      "expect": { "filters": [{ "field": "rsi", "op": "<", "value": 30 }] }
+    },
+    {
+      "query": "Safe defensive stocks",
+      "expect": { "ranking": "value" }, "requireAssumptions": true
+    },
+    {
+      "query": "Something that won't crash",
+      "expect": {}, "requireAssumptions": true
+    },
+    {
+      "query": "High-quality growth at a reasonable price",
+      "expect": { "filters": [{ "field": "revGrowth", "op": ">", "value": 10 }] }, "requireAssumptions": true
+    },
+    {
+      "query": "Beaten-down large caps that are still growing revenue",
+      "expect": { "filters": [{ "field": "revGrowth", "op": ">", "value": 0 }], "ranking": "decline" }
+    }
+  ]
+}
