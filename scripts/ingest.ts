@@ -11,6 +11,7 @@ import { createClient } from "@supabase/supabase-js";
 import {
   fetchProfile, fetchMetrics, fetchQuote, fetchCandles,
 } from "../lib/finnhub";
+import { fetchYahooCandles } from "../lib/yahoo";
 import { rsi, sma, pctChange, fromHigh } from "../lib/indicators";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -18,7 +19,11 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const FINNHUB = requireEnv("FINNHUB_API_KEY");
 const SUPABASE_URL = requireEnv("SUPABASE_URL");
 const SERVICE_KEY = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
-const USE_CANDLES = (process.env.USE_CANDLES ?? "true") !== "false";
+// Where daily candles come from: "yahoo" (free, default), "finnhub" (needs a
+// plan with /stock/candle), or "none". Legacy USE_CANDLES=false maps to "none".
+const CANDLE_SOURCE = (
+  process.env.CANDLE_SOURCE ?? (process.env.USE_CANDLES === "false" ? "none" : "yahoo")
+).toLowerCase();
 const LIMIT = Number(process.env.UNIVERSE_LIMIT ?? 0);
 
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
@@ -49,8 +54,10 @@ async function build(symbol: string): Promise<Row | null> {
     let from52: number | null = null;
     let chg1w: number | null = null;
 
-    if (USE_CANDLES) {
-      const candles = await fetchCandles(symbol, FINNHUB);
+    if (CANDLE_SOURCE !== "none") {
+      const candles = CANDLE_SOURCE === "finnhub"
+        ? await fetchCandles(symbol, FINNHUB)
+        : await fetchYahooCandles(symbol);
       if (candles && candles.closes.length) {
         rsiVal = rsi(candles.closes, 14);
         sma50 = sma(candles.closes, 50);
@@ -94,7 +101,7 @@ async function main() {
   let symbols: string[] = raw.symbols ?? [];
   if (LIMIT > 0) symbols = symbols.slice(0, LIMIT);
 
-  console.log(`Ingesting ${symbols.length} symbols (candles: ${USE_CANDLES})…`);
+  console.log(`Ingesting ${symbols.length} symbols (candles: ${CANDLE_SOURCE})…`);
   const rows: Row[] = [];
   let done = 0;
   for (const s of symbols) {
