@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { supabase } from "../lib/supabase";
+import { FEEDBACK_URL } from "../lib/site";
 import { FIELDS, RANKINGS, SECTORS, type Filter, type StockRow } from "../lib/fields";
 import { runScreen, type ScreenResult } from "../lib/screen";
 
@@ -161,6 +162,11 @@ function Auth() {
               style={{ background: "none", border: "none", color: T.accent, fontWeight: 550, padding: 0, fontSize: 14 }}>
               {mode === "signup" ? "Sign in" : "Create one"}
             </button>
+          </div>
+
+          <div style={{ marginTop: 26, paddingTop: 16, borderTop: `1px solid ${T.border}`, fontSize: 13, color: T.inkFaint, display: "flex", gap: 14 }}>
+            <a href="/about" style={{ color: T.inkSoft, textDecoration: "none" }}>About</a>
+            <a href={FEEDBACK_URL} style={{ color: T.inkSoft, textDecoration: "none" }}>Feedback</a>
           </div>
         </div>
       </div>
@@ -506,6 +512,8 @@ function TopBar({ email, onSignOut }: { email: string; onSignOut: () => void }) 
         <Brand />
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <span className="user-hide" style={{ fontSize: 13.5, color: T.inkSoft }}>{email}</span>
+          <a href="/about" className="btn btn-ghost btn-sm" style={{ textDecoration: "none" }}>About</a>
+          <a href={FEEDBACK_URL} className="btn btn-ghost btn-sm" style={{ textDecoration: "none" }}>Feedback</a>
           <button className="btn btn-neutral btn-sm" onClick={onSignOut}>Sign out</button>
         </div>
       </div>
