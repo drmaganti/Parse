@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { supabase } from "../lib/supabase";
 import { FIELDS, RANKINGS, SECTORS, type Filter, type StockRow } from "../lib/fields";
 import { runScreen, type ScreenResult } from "../lib/screen";
@@ -17,12 +17,15 @@ const T = {
 const FONT_DISPLAY = "'Space Grotesk', system-ui, sans-serif";
 const FONT_MONO = "'JetBrains Mono', ui-monospace, monospace";
 
-const PRESETS = [
-  { name: "Deep value", q: "Cheap large caps trading at a low P/E and low price-to-book" },
-  { name: "Dividend income", q: "Reliable dividend payers yielding over 3% with below-average volatility" },
-  { name: "Growth", q: "Fast-growing companies with revenue growth above 15%" },
-  { name: "Momentum", q: "Names with strong recent price momentum near their 52-week highs" },
-  { name: "Beaten-down", q: "Large caps that have fallen recently but still have positive revenue growth" },
+// Example prompts that loop as greyed placeholder text in the empty query bar,
+// teaching what's possible without a persistent row of controls.
+const EXAMPLES = [
+  "Cheap large caps with a P/E under 15",
+  "Dividend payers yielding over 3% with low volatility",
+  "Tech companies growing revenue more than 20% a year",
+  "Stocks more than 15% off their 52-week highs",
+  "Quality names near their 52-week highs with strong momentum",
+  "Beaten-down stocks that still have positive revenue growth",
 ];
 
 export default function Page() {
@@ -64,6 +67,31 @@ function BaseStyle() {
       .row-hover:hover { background: ${T.surfaceAlt}; }
       .lift { transition: box-shadow .15s, border-color .15s; }
       .lift:hover { border-color: ${T.borderStrong}; }
+      .chip-val { cursor: pointer; }
+      .chip-val:hover { text-decoration: underline dotted; text-underline-offset: 3px; }
+      .sortable { cursor: pointer; user-select: none; }
+      .sortable:hover { color: ${T.accent} !important; }
+      .skel { background: linear-gradient(90deg, #EDEFF2 25%, #F6F7F9 50%, #EDEFF2 75%); background-size: 200% 100%; animation: shimmer 1.15s infinite linear; border-radius: 6px; height: 12px; }
+      @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+      .btn { font-family: inherit; font-weight: 550; font-size: 14.5px; border-radius: 10px; height: 40px; padding: 0 18px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; cursor: pointer; border: 1px solid transparent; transition: background .14s, border-color .14s; }
+      .btn:disabled { opacity: .65; cursor: default; }
+      .btn-primary { background: ${T.accent}; color: #fff; }
+      .btn-primary:hover:not(:disabled) { background: ${T.accentInk}; }
+      .btn-secondary { background: ${T.accentSoft}; color: ${T.accentInk}; border-color: #DADEF6; }
+      .btn-secondary:hover:not(:disabled) { background: #E2E6F8; }
+      .btn-ghost { background: transparent; color: ${T.accent}; }
+      .btn-ghost:hover:not(:disabled) { background: ${T.accentSoft}; }
+      .btn-neutral { background: ${T.surface}; color: ${T.inkSoft}; border-color: ${T.border}; }
+      .btn-neutral:hover:not(:disabled) { border-color: ${T.borderStrong}; }
+      .btn-sm { height: 34px; font-size: 13.5px; padding: 0 14px; border-radius: 9px; }
+      .cmdbar { display: flex; align-items: center; gap: 12px; background: ${T.surface}; border: 1px solid ${T.borderStrong}; border-radius: 14px; padding: 6px 6px 6px 16px; box-shadow: 0 1px 2px rgba(21,23,28,.04); transition: border-color .14s, box-shadow .14s; }
+      .cmdbar:focus-within { border-color: ${T.accent}; box-shadow: 0 0 0 3px ${T.accentSoft}; }
+      .cmd-field { position: relative; flex: 1; display: flex; align-items: center; min-width: 0; }
+      .cmd-field textarea { width: 100%; border: none; outline: none; background: transparent; font-family: inherit; font-size: 15.5px; line-height: 1.4; color: ${T.ink}; resize: none; padding: 9px 0; max-height: 120px; }
+      .ph-loop { position: absolute; left: 0; right: 8px; top: 50%; transform: translateY(-50%); color: ${T.inkFaint}; font-size: 15.5px; pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: phin .55s ease; }
+      @keyframes phin { from { opacity: 0; } to { opacity: 1; } }
+      .fld { transition: border-color .14s, box-shadow .14s; }
+      .fld:focus { outline: none; border-color: ${T.accent}; box-shadow: 0 0 0 3px ${T.accentSoft}; }
       @media (prefers-reduced-motion: reduce) { .chip-enter { animation: none; } }
       @media (max-width: 720px) { .aside-hide { display: none !important; } .qbar { flex-direction: column; } .user-hide { display: none !important; } }
     `}</style>
@@ -119,9 +147,7 @@ function Auth() {
           {err && <div style={{ color: T.loss, fontSize: 13.5, marginTop: 14 }}>{err}</div>}
           {note && <div style={{ color: T.accentInk, fontSize: 13.5, marginTop: 14 }}>{note}</div>}
 
-          <button onClick={submit} disabled={busy}
-            style={{ width: "100%", marginTop: 22, padding: "12px 16px", background: T.accent, color: "#fff",
-              border: "none", borderRadius: 10, fontSize: 15, fontWeight: 550, opacity: busy ? 0.7 : 1 }}>
+          <button onClick={submit} disabled={busy} className="btn btn-primary" style={{ width: "100%", height: 44, marginTop: 22 }}>
             {busy ? "One moment…" : mode === "signup" ? "Sign up" : "Sign in"}
           </button>
 
@@ -164,7 +190,7 @@ function Field({ label, type, value, onChange, placeholder, onEnter }:
   return (
     <label style={{ display: "block" }}>
       <span style={{ display: "block", fontSize: 13, fontWeight: 550, color: T.inkSoft, marginBottom: 7 }}>{label}</span>
-      <input type={type} value={value} placeholder={placeholder}
+      <input type={type} value={value} placeholder={placeholder} className="fld"
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && onEnter && onEnter()}
         style={{ width: "100%", padding: "11px 13px", fontSize: 15, background: T.surface,
@@ -197,23 +223,64 @@ function Screener({ user }: { user: { email: string } }) {
   const [interp, setInterp] = useState("");
   const [assumptions, setAssumptions] = useState<string[]>([]);
   const [results, setResults] = useState<ScreenResult[]>([]);
+  const [sort, setSort] = useState<{ col: keyof StockRow; dir: "asc" | "desc" } | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  const [dataAsOf, setDataAsOf] = useState("");
   const [loading, setLoading] = useState(false);
   const [hasRun, setHasRun] = useState(false);
   const [saved, setSaved] = useState<SavedRow[]>([]);
   const [toast, setToast] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [dataErr, setDataErr] = useState("");
+  const stocksRef = useRef<StockRow[]>([]);
 
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(""), 2200); };
+  useEffect(() => { stocksRef.current = stocks; }, [stocks]);
+
+  // Push/replace the screen into the URL so it's shareable and the back button
+  // recovers the previous screen. Push for a new screen, replace for edits.
+  const syncUrl = (q: string, fs: Filter[], rk: string, push: boolean) => {
+    const url = `${window.location.pathname}?s=${encodeScreen(q, fs, rk)}`;
+    if (push) window.history.pushState({}, "", url);
+    else window.history.replaceState({}, "", url);
+  };
+  const applyScreen = (fs: Filter[], rk: string, note: string) => {
+    setFilters(fs); setRanking(rk); setInterp(note); setAssumptions([]);
+    setResults(runScreen(stocksRef.current, fs, rk, Infinity));
+    setHasRun(true); setSort(null); setShowAll(false);
+  };
 
   useEffect(() => {
     (async () => {
       const { data, error } = await supabase.from("stocks").select("*");
-      if (error) setDataErr("Could not load the universe. Is the ingest run and the table populated?");
-      else setStocks((data ?? []) as StockRow[]);
-      const { data: s } = await supabase.from("saved_screens").select("*").order("created_at", { ascending: false });
-      if (s) setSaved(s.map((r: any) => ({ id: r.id, name: r.name, query: r.query, filters: r.filters, ranking: r.ranking })));
+      if (error) { setDataErr("Could not load the universe. Is the ingest run and the table populated?"); return; }
+      const rows = (data ?? []) as any[];
+      setStocks(rows as StockRow[]);
+      stocksRef.current = rows as StockRow[];
+      setDataAsOf(rows.reduce((m, r) => (r.updated_at && r.updated_at > m ? r.updated_at : m), ""));
+      // Restore a shared screen if one is in the URL.
+      const s = new URLSearchParams(window.location.search).get("s");
+      const dec = s ? decodeScreen(s) : null;
+      if (dec) {
+        setQuery(dec.q); setFilters(dec.filters); setRanking(dec.ranking);
+        setInterp("Restored a shared screen."); setAssumptions([]);
+        setResults(runScreen(rows as StockRow[], dec.filters, dec.ranking, Infinity));
+        setHasRun(true);
+      }
+      const { data: sv } = await supabase.from("saved_screens").select("*").order("created_at", { ascending: false });
+      if (sv) setSaved(sv.map((r: any) => ({ id: r.id, name: r.name, query: r.query, filters: r.filters, ranking: r.ranking })));
     })();
+  }, []);
+
+  // Back / forward restores the screen from the URL without a parse call.
+  useEffect(() => {
+    const onPop = () => {
+      const s = new URLSearchParams(window.location.search).get("s");
+      const dec = s ? decodeScreen(s) : null;
+      if (dec) { setQuery(dec.q); applyScreen(dec.filters, dec.ranking, "Restored a previous screen."); }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
   }, []);
 
   const parse = useCallback(async (q: string, isRefine: boolean) => {
@@ -227,37 +294,63 @@ function Screener({ user }: { user: { email: string } }) {
       });
       const r = await res.json();
       if (r?.error) { flash(r.error); setLoading(false); return; }
-      setFilters(r.filters); setRanking(r.ranking); setInterp(r.interpretation);
-      setAssumptions(r.assumptions || []);
-      setResults(runScreen(stocks, r.filters, r.ranking));
-      setHasRun(true);
+      setInterp(r.interpretation); setAssumptions(r.assumptions || []);
+      setFilters(r.filters); setRanking(r.ranking);
+      setResults(runScreen(stocks, r.filters, r.ranking, Infinity));
+      setHasRun(true); setSort(null); setShowAll(false);
+      syncUrl(q, r.filters, r.ranking, true);
     } catch {
       flash("The parse service didn't respond. Check that the app can reach /api/parse.");
     }
     setLoading(false);
   }, [filters, stocks]);
 
+  const recompute = (fs: Filter[], rk: string) => { setResults(runScreen(stocks, fs, rk, Infinity)); setShowAll(false); syncUrl(query, fs, rk, false); };
   const editFilter = (id: string, patch: Partial<Filter>) => {
     setFilters((fs) => {
       const next = fs.map((f) => (f.id === id ? { ...f, ...patch, source: "user" as const } : f));
-      setResults(runScreen(stocks, next, ranking));
+      recompute(next, ranking);
       return next;
     });
   };
-  const removeFilter = (id: string) => setFilters((fs) => { const n = fs.filter((f) => f.id !== id); setResults(runScreen(stocks, n, ranking)); return n; });
+  const removeFilter = (id: string) => setFilters((fs) => { const n = fs.filter((f) => f.id !== id); recompute(n, ranking); return n; });
   const addFilter = (field: string, op: Filter["op"], value: number | string) => {
     setFilters((fs) => {
-      // If this exact field already exists, update it rather than duplicating.
+      // If this field already exists, update it rather than duplicating.
       const id = `${field}_${op}_add_${Date.now()}`;
       const existing = fs.find((f) => f.field === field);
       const next = existing
         ? fs.map((f) => (f.field === field ? { ...f, op, value, source: "user" as const } : f))
         : [...fs, { id, field, op, value, source: "user" as const }];
-      setResults(runScreen(stocks, next, ranking));
+      recompute(next, ranking);
       return next;
     });
   };
-  const changeRanking = (rk: string) => { setRanking(rk); setResults(runScreen(stocks, filters, rk)); };
+  const changeRanking = (rk: string) => { setRanking(rk); setSort(null); recompute(filters, rk); };
+  const toggleSort = (col: keyof StockRow) => {
+    setSort((cur) => (!cur || cur.col !== col ? { col, dir: "desc" } : cur.dir === "desc" ? { col, dir: "asc" } : null));
+  };
+  const shareLink = async () => {
+    try { await navigator.clipboard.writeText(window.location.href); flash("Link copied."); }
+    catch { flash("Copy failed — the screen is in the address bar."); }
+  };
+
+  // Derive what the table shows: apply a column sort if set, then cap unless expanded.
+  const total = results.length;
+  const displayed = useMemo(() => {
+    let r = results;
+    if (sort) {
+      const { col, dir } = sort; const d = dir === "asc" ? 1 : -1;
+      r = [...r].sort((a, b) => {
+        const av = a[col] as any, bv = b[col] as any;
+        if (av == null && bv == null) return 0;
+        if (av == null) return 1;
+        if (bv == null) return -1;
+        return (typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv))) * d;
+      });
+    }
+    return r.slice(0, showAll ? r.length : 25);
+  }, [results, sort, showAll]);
 
   const saveScreen = async () => {
     if (!filters.length) return flash("Build a screen first, then save it.");
@@ -274,7 +367,9 @@ function Screener({ user }: { user: { email: string } }) {
   const loadScreen = (rec: SavedRow) => {
     setQuery(rec.query); setFilters(rec.filters); setRanking(rec.ranking);
     setInterp("Loaded a saved screen."); setAssumptions([]);
-    setResults(runScreen(stocks, rec.filters, rec.ranking)); setHasRun(true);
+    setResults(runScreen(stocks, rec.filters, rec.ranking, Infinity));
+    setHasRun(true); setSort(null); setShowAll(false);
+    syncUrl(rec.query, rec.filters, rec.ranking, true);
   };
   const deleteScreen = async (id: string) => {
     await supabase.from("saved_screens").delete().eq("id", id);
@@ -294,16 +389,9 @@ function Screener({ user }: { user: { email: string } }) {
               Plain English. It becomes editable filters you can tune by hand.
             </p>
             <QueryBar value={query} onChange={setQuery} onSubmit={() => parse(query, false)} loading={loading} refine={hasRun} onRefine={() => parse(query, true)} />
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
-              {PRESETS.map((p) => (
-                <button key={p.name} onClick={() => { setQuery(p.q); parse(p.q, false); }}
-                  className="lift" style={{ fontSize: 13, padding: "6px 12px", background: T.surface,
-                    border: `1px solid ${T.border}`, borderRadius: 20, color: T.inkSoft }}>{p.name}</button>
-              ))}
-            </div>
             {dataErr && <div style={{ marginTop: 12, color: T.loss, fontSize: 13.5 }}>{dataErr}</div>}
             {!dataErr && stocks.length > 0 && (
-              <div style={{ marginTop: 10, fontSize: 12.5, color: T.inkFaint }} className="mono">{stocks.length} names in the universe</div>
+              <div style={{ marginTop: 12, fontSize: 12.5, color: T.inkFaint }}>Screening the S&amp;P 500 and Nasdaq 100</div>
             )}
           </section>
 
@@ -312,8 +400,10 @@ function Screener({ user }: { user: { email: string } }) {
               onEdit={editFilter} onRemove={removeFilter} onRanking={changeRanking} onAdd={addFilter} />
           )}
           {hasRun && (
-            <Results rows={results} filters={filters} ranking={ranking} loading={loading}
-              onSave={saveScreen} expanded={expanded} setExpanded={setExpanded} />
+            <Results rows={displayed} total={total} filters={filters} ranking={ranking} loading={loading}
+              sort={sort} onSort={toggleSort} showAll={showAll} onToggleShowAll={() => setShowAll((v) => !v)}
+              dataAsOf={dataAsOf} onSave={saveScreen} onShare={shareLink}
+              expanded={expanded} setExpanded={setExpanded} />
           )}
           <Saved saved={saved} onLoad={loadScreen} onDelete={deleteScreen} />
         </div>
@@ -333,7 +423,7 @@ function TopBar({ email, onSignOut }: { email: string; onSignOut: () => void }) 
         <Brand />
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <span className="user-hide" style={{ fontSize: 13.5, color: T.inkSoft }}>{email}</span>
-          <button onClick={onSignOut} style={{ fontSize: 13.5, color: T.inkSoft, background: "none", border: `1px solid ${T.border}`, borderRadius: 8, padding: "6px 12px" }}>Sign out</button>
+          <button className="btn btn-neutral btn-sm" onClick={onSignOut}>Sign out</button>
         </div>
       </div>
     </div>
@@ -342,22 +432,49 @@ function TopBar({ email, onSignOut }: { email: string; onSignOut: () => void }) 
 
 function QueryBar({ value, onChange, onSubmit, loading, refine, onRefine }:
   { value: string; onChange: (v: string) => void; onSubmit: () => void; loading: boolean; refine: boolean; onRefine: () => void }) {
+  const [idx, setIdx] = useState(0);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+
+  // Loop the greyed example prompts only while the field is empty.
+  useEffect(() => {
+    if (value) return;
+    const t = setInterval(() => setIdx((i) => (i + 1) % EXAMPLES.length), 3400);
+    return () => clearInterval(t);
+  }, [value]);
+
+  const grow = () => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 120) + "px";
+  };
+  const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onSubmit(); }
+    else if (e.key === "Tab" && !value) { e.preventDefault(); onChange(EXAMPLES[idx]); }
+  };
+
   return (
-    <div className="qbar" style={{ display: "flex", gap: 10, alignItems: "stretch" }}>
-      <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={2}
-        onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) onSubmit(); }}
-        placeholder="e.g. Cheap large-cap tech with low debt and a dividend over 2%"
-        style={{ flex: 1, resize: "none", padding: "13px 15px", fontSize: 15.5, lineHeight: 1.45, border: `1px solid ${T.border}`, borderRadius: 12, background: T.surface, color: T.ink }} />
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <button onClick={onSubmit} disabled={loading}
-          style={{ background: T.accent, color: "#fff", border: "none", borderRadius: 11, padding: "0 20px", fontSize: 14.5, fontWeight: 550, minWidth: 118, opacity: loading ? 0.7 : 1 }}>
-          {loading ? "Reading…" : "Run screen"}
+    <div>
+      <div className="cmdbar">
+        <span style={{ color: T.inkFaint, display: "flex", flexShrink: 0 }} aria-hidden>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.7" /><path d="M20 20l-3.2-3.2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>
+        </span>
+        <div className="cmd-field">
+          {!value && <span key={idx} className="ph-loop">{EXAMPLES[idx]}</span>}
+          <textarea ref={taRef} value={value} rows={1} aria-label="Describe the screen you want"
+            onChange={(e) => { onChange(e.target.value); grow(); }} onKeyDown={onKey} />
+        </div>
+        <button className="btn btn-primary" onClick={onSubmit} disabled={loading} style={{ flexShrink: 0 }}>
+          {loading ? "Reading…" : <>Run
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden><path d="M4 8h8M9 4l4 4-4 4" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </>}
         </button>
-        {refine && (
-          <button onClick={onRefine} disabled={loading}
-            style={{ background: T.surface, color: T.accent, border: `1px solid ${T.border}`, borderRadius: 11, padding: "0 20px", fontSize: 13.5, fontWeight: 550, minWidth: 118 }}>Refine</button>
-        )}
       </div>
+      {refine && (
+        <div style={{ marginTop: 10 }}>
+          <button className="btn btn-secondary btn-sm" onClick={onRefine} disabled={loading}>Refine</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -420,7 +537,8 @@ function Chip({ f, onEdit, onRemove }: { f: Filter; onEdit: (id: string, p: Part
             style={{ width: 62, border: `1px solid ${T.border}`, borderRadius: 6, padding: "2px 6px", fontSize: 13 }} />
         </span>
       ) : (
-        <button className="mono" onClick={() => f.field !== "sector" && setEditing(true)}
+        <button className={`mono${f.field !== "sector" ? " chip-val" : ""}`} onClick={() => f.field !== "sector" && setEditing(true)}
+          title={f.field !== "sector" ? "Click to edit" : undefined}
           style={{ background: "none", border: "none", padding: 0, color: "inherit", fontSize: 13.5, cursor: f.field === "sector" ? "default" : "pointer" }}>{display}</button>
       )}
       <button onClick={() => onRemove(f.id)} aria-label="Remove filter"
@@ -501,31 +619,93 @@ function AddFilter({ existing, onAdd }: { existing: string[]; onAdd: (field: str
 
 function fmtNum(v: number | null, dp = 1) { return v == null ? "—" : v.toFixed(dp); }
 
-function Results({ rows, filters, ranking, loading, onSave, expanded, setExpanded }:
-  { rows: ScreenResult[]; filters: Filter[]; ranking: string; loading: boolean; onSave: () => void; expanded: string | null; setExpanded: (s: string | null) => void }) {
-  const cols: { key: keyof StockRow; label: string; fmt: (v: any) => string }[] = [
-    { key: "market_cap", label: "Mkt cap", fmt: (v) => (v == null ? "—" : "$" + v + "B") },
-    { key: "pe", label: "P/E", fmt: (v) => fmtNum(v) },
-    { key: "div_yield", label: "Yield", fmt: (v) => (v == null ? "—" : v.toFixed(1) + "%") },
-    { key: "beta", label: "Beta", fmt: (v) => fmtNum(v, 2) },
-    { key: "rev_growth", label: "Rev gr.", fmt: (v) => (v == null ? "—" : v.toFixed(1) + "%") },
-  ];
-  const activeCols = new Set(filters.map((f) => FIELDS[f.field]?.col));
+// ---- Results table helpers ----
+type Col = { key: keyof StockRow; label: string; fmt: (v: any) => string };
+const pct = (v: any) => (v == null ? "—" : (v as number).toFixed(1) + "%");
+const ALL_COLS: Record<string, Col> = {
+  market_cap:    { key: "market_cap",    label: "Mkt cap",    fmt: (v) => (v == null ? "—" : "$" + v + "B") },
+  pe:            { key: "pe",            label: "P/E",        fmt: (v) => fmtNum(v) },
+  pb:            { key: "pb",            label: "P/B",        fmt: (v) => fmtNum(v) },
+  ps:            { key: "ps",            label: "P/S",        fmt: (v) => fmtNum(v) },
+  div_yield:     { key: "div_yield",     label: "Yield",      fmt: pct },
+  beta:          { key: "beta",          label: "Beta",       fmt: (v) => fmtNum(v, 2) },
+  rev_growth:    { key: "rev_growth",    label: "Rev gr.",    fmt: pct },
+  rsi:           { key: "rsi",           label: "RSI",        fmt: (v) => fmtNum(v, 0) },
+  from_52w_high: { key: "from_52w_high", label: "% off high", fmt: pct },
+};
+// Which single column best represents each ranking, so the ranked metric is visible.
+const RANK_COL: Record<string, keyof StockRow> = {
+  value: "pe", quality: "rev_growth", dividend: "div_yield",
+  momentum: "chg_1w", decline: "from_52w_high", marketCap: "market_cap",
+};
+// Columns adapt to the screen: what the user filtered on comes first, then the
+// ranked metric, then sensible defaults — capped so the table stays readable.
+// chg_1w is always the trailing coloured column, so it's excluded here.
+function buildColumns(filters: Filter[], ranking: string): Col[] {
+  const order: string[] = [];
+  const add = (c?: string) => { if (c && c !== "chg_1w" && ALL_COLS[c] && !order.includes(c)) order.push(c); };
+  filters.forEach((f) => { const m = FIELDS[f.field]; if (m && m.kind === "num") add(m.col); });
+  add(RANK_COL[ranking] as string);
+  ["market_cap", "pe", "div_yield", "beta"].forEach(add);
+  return order.slice(0, 6).map((c) => ALL_COLS[c]);
+}
+
+// ---- Shareable screen state in the URL ----
+function encodeScreen(q: string, filters: Filter[], ranking: string): string {
+  const payload = { q, r: ranking, f: filters.map((f) => [f.field, f.op, f.value, f.source === "user" ? 1 : 0]) };
+  return encodeURIComponent(JSON.stringify(payload));
+}
+function decodeScreen(s: string): { q: string; ranking: string; filters: Filter[] } | null {
+  try {
+    const j = JSON.parse(decodeURIComponent(s));
+    const filters: Filter[] = (j.f || []).map((a: any[], i: number) => ({
+      id: `${a[0]}_${a[1]}_url_${i}`, field: a[0], op: a[1], value: a[2], source: a[3] ? "user" : "ai",
+    }));
+    return { q: j.q || "", ranking: j.r || "marketCap", filters };
+  } catch { return null; }
+}
+function formatAsOf(iso: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function Results({ rows, total, filters, ranking, loading, sort, onSort, showAll, onToggleShowAll, dataAsOf, onSave, onShare, expanded, setExpanded }:
+  { rows: ScreenResult[]; total: number; filters: Filter[]; ranking: string; loading: boolean;
+    sort: { col: keyof StockRow; dir: "asc" | "desc" } | null; onSort: (c: keyof StockRow) => void;
+    showAll: boolean; onToggleShowAll: () => void; dataAsOf: string;
+    onSave: () => void; onShare: () => void; expanded: string | null; setExpanded: (s: string | null) => void }) {
+  const cols = buildColumns(filters, ranking);
+  const activeCols = new Set(filters.map((f) => FIELDS[f.field]?.col).filter(Boolean) as string[]);
+  const arrow = (k: keyof StockRow) => (sort && sort.col === k ? (sort.dir === "asc" ? " ↑" : " ↓") : "");
+  const countStr = loading ? "…" : total > rows.length ? `top ${rows.length} of ${total}` : `${total} names`;
+  const orderStr = sort ? `sorted by ${ALL_COLS[sort.col as string]?.label ?? "column"}` : (RANKINGS[ranking]?.label.toLowerCase() ?? "");
 
   return (
     <section>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
           <h2 className="disp" style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Results</h2>
-          <span className="mono" style={{ fontSize: 13, color: T.inkFaint }}>
-            {loading ? "…" : `${rows.length} names · ${RANKINGS[ranking]?.label.toLowerCase() ?? ""}`}
-          </span>
+          <span className="mono" style={{ fontSize: 13, color: T.inkFaint }}>{countStr}{orderStr ? ` · ${orderStr}` : ""}</span>
         </div>
-        <button onClick={onSave} className="lift"
-          style={{ fontSize: 13.5, fontWeight: 550, color: T.accent, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 9, padding: "7px 14px" }}>Save screen</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onShare} className="btn btn-ghost btn-sm">Share</button>
+          <button onClick={onSave} className="btn btn-secondary btn-sm">Save screen</button>
+        </div>
       </div>
 
-      {rows.length === 0 && !loading ? (
+      {loading ? (
+        <div className="lift" style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} style={{ display: "flex", gap: 16, alignItems: "center", padding: "13px 16px", borderBottom: i < 7 ? `1px solid ${T.border}` : "none" }}>
+              <div className="skel" style={{ width: 44 }} />
+              <div className="skel" style={{ width: 180, flex: 1 }} />
+              <div className="skel" style={{ width: 60 }} />
+              <div className="skel" style={{ width: 60 }} />
+            </div>
+          ))}
+        </div>
+      ) : rows.length === 0 ? (
         <Empty title="No names match this screen." body="Loosen a filter to widen the field, or remove one entirely." />
       ) : (
         <div className="lift" style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
@@ -536,8 +716,11 @@ function Results({ rows, filters, ranking, loading, onSave, expanded, setExpande
                   <Th style={{ width: 34, textAlign: "right", paddingLeft: 16 }}>#</Th>
                   <Th style={{ textAlign: "left" }}>Ticker</Th>
                   <Th style={{ textAlign: "left" }}>Company</Th>
-                  {cols.map((c) => <Th key={String(c.key)} style={{ textAlign: "right" }} hot={activeCols.has(c.key as string)}>{c.label}</Th>)}
-                  <Th style={{ textAlign: "right", paddingRight: 16 }}>1W</Th>
+                  {cols.map((c) => (
+                    <Th key={String(c.key)} style={{ textAlign: "right" }} hot={activeCols.has(c.key as string)}
+                      onClick={() => onSort(c.key)}>{c.label}{arrow(c.key)}</Th>
+                  ))}
+                  <Th style={{ textAlign: "right", paddingRight: 16 }} onClick={() => onSort("chg_1w")}>1W{arrow("chg_1w")}</Th>
                 </tr>
               </thead>
               <tbody>
@@ -586,8 +769,15 @@ function Results({ rows, filters, ranking, loading, onSave, expanded, setExpande
               </tbody>
             </table>
           </div>
+          {total > 25 && (
+            <button onClick={onToggleShowAll}
+              style={{ width: "100%", padding: "11px 16px", background: T.surfaceAlt, border: "none", borderTop: `1px solid ${T.border}`,
+                fontSize: 13, fontWeight: 550, color: T.accent, cursor: "pointer" }}>
+              {showAll ? "Show top 25" : `Show all ${total}`}
+            </button>
+          )}
           <div style={{ padding: "10px 16px", borderTop: `1px solid ${T.border}`, fontSize: 12, color: T.inkFaint }}>
-            Live data · fundamentals from Finnhub, technicals from Yahoo, refreshed nightly.
+            Live data{dataAsOf ? ` · as of ${formatAsOf(dataAsOf)}` : ""} · S&amp;P 500 and Nasdaq 100 · fundamentals from Finnhub, technicals from Yahoo.
           </div>
         </div>
       )}
@@ -610,10 +800,11 @@ function passesUi(stock: StockRow, f: Filter): boolean {
   }
 }
 
-function Th({ children, style, hot }: { children: React.ReactNode; style?: React.CSSProperties; hot?: boolean }) {
+function Th({ children, style, hot, onClick }: { children: React.ReactNode; style?: React.CSSProperties; hot?: boolean; onClick?: () => void }) {
   return (
-    <th style={{ padding: "10px 8px", fontSize: 11.5, fontWeight: 600, letterSpacing: "0.04em",
-      color: hot ? T.accent : T.inkFaint, textTransform: "uppercase", whiteSpace: "nowrap", ...style }}>{children}</th>
+    <th onClick={onClick} className={onClick ? "sortable" : undefined}
+      style={{ padding: "10px 8px", fontSize: 11.5, fontWeight: 600, letterSpacing: "0.04em",
+        color: hot ? T.accent : T.inkFaint, textTransform: "uppercase", whiteSpace: "nowrap", ...style }}>{children}</th>
   );
 }
 
@@ -646,8 +837,8 @@ function Saved({ saved, onLoad, onDelete }: { saved: SavedRow[]; onLoad: (s: Sav
                 {s.filters.length > 3 && <span style={{ fontSize: 11.5, color: T.inkFaint, alignSelf: "center" }}>+{s.filters.length - 3}</span>}
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: "auto" }}>
-                <button onClick={() => onLoad(s)} style={{ flex: 1, fontSize: 13, fontWeight: 550, color: "#fff", background: T.accent, border: "none", borderRadius: 8, padding: "7px 0" }}>Run</button>
-                <button onClick={() => onDelete(s.id)} aria-label="Delete" style={{ fontSize: 13, color: T.inkSoft, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "7px 11px" }}>Delete</button>
+                <button className="btn btn-primary btn-sm" onClick={() => onLoad(s)} style={{ flex: 1 }}>Run</button>
+                <button className="btn btn-neutral btn-sm" onClick={() => onDelete(s.id)} aria-label="Delete">Delete</button>
               </div>
             </div>
           ))}
