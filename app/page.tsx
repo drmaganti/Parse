@@ -90,6 +90,10 @@ function BaseStyle() {
       .cmd-field textarea { width: 100%; border: none; outline: none; background: transparent; font-family: inherit; font-size: 15.5px; line-height: 1.4; color: ${T.ink}; resize: none; padding: 9px 0; max-height: 120px; }
       .ph-loop { position: absolute; left: 0; right: 8px; top: 50%; transform: translateY(-50%); color: ${T.inkFaint}; font-size: 15.5px; pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: phin .55s ease; }
       @keyframes phin { from { opacity: 0; } to { opacity: 1; } }
+      .demo-row { animation: rowin .34s ease both; }
+      @keyframes rowin { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
+      .cursor { animation: blink 1.05s step-end infinite; }
+      @keyframes blink { 50% { opacity: 0; } }
       .fld { transition: border-color .14s, box-shadow .14s; }
       .fld:focus { outline: none; border-color: ${T.accent}; box-shadow: 0 0 0 3px ${T.accentSoft}; }
       @media (prefers-reduced-motion: reduce) { .chip-enter { animation: none; } }
@@ -165,21 +169,100 @@ function Auth() {
   );
 }
 
+const DEMO = [
+  { q: "Cheap large caps with a P/E under 15", rank: "Cheapest first",
+    chips: ["P/E < 15", "Mkt cap > $10B"],
+    rows: [["BRK.B", "9.4", "+0.4%"], ["JPM", "12.8", "+0.9%"], ["BAC", "12.1", "+1.0%"]] },
+  { q: "Dividend payers yielding over 3%", rank: "Highest yield",
+    chips: ["Div yield > 3%", "Beta < 1.2"],
+    rows: [["VZ", "6.1%", "-0.9%"], ["PFE", "5.9%", "-4.1%"], ["T", "5.4%", "+0.5%"]] },
+  { q: "Stocks more than 15% off their 52-week highs", rank: "Most beaten-down",
+    chips: ["% off high < -15%"],
+    rows: [["INTC", "-38%", "-6.4%"], ["NKE", "-31%", "-5.8%"], ["BA", "-24%", "-3.9%"]] },
+];
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function usePrefersReducedMotion() {
+  const [reduce, setReduce] = useState(false);
+  useEffect(() => {
+    const m = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setReduce(m.matches);
+    const h = () => setReduce(m.matches);
+    m.addEventListener?.("change", h);
+    return () => m.removeEventListener?.("change", h);
+  }, []);
+  return reduce;
+}
+
 function AuthAside() {
+  const reduce = usePrefersReducedMotion();
+  const [scene, setScene] = useState(0);
+  const [typed, setTyped] = useState("");
+  const [chips, setChips] = useState(0);
+  const [rows, setRows] = useState(0);
+  const cur = DEMO[scene];
+
+  useEffect(() => {
+    if (reduce) return;
+    let cancelled = false;
+    (async () => {
+      setTyped(""); setChips(0); setRows(0);
+      for (let i = 1; i <= cur.q.length; i++) { await wait(36); if (cancelled) return; setTyped(cur.q.slice(0, i)); }
+      await wait(550);
+      for (let i = 1; i <= cur.chips.length; i++) { await wait(300); if (cancelled) return; setChips(i); }
+      await wait(450);
+      for (let i = 1; i <= cur.rows.length; i++) { await wait(240); if (cancelled) return; setRows(i); }
+      await wait(2800); if (cancelled) return;
+      setScene((s) => (s + 1) % DEMO.length);
+    })();
+    return () => { cancelled = true; };
+  }, [scene, reduce]);
+
+  const dTyped = reduce ? cur.q : typed;
+  const dChips = reduce ? cur.chips.length : chips;
+  const dRows = reduce ? cur.rows.length : rows;
+  const phase = dRows > 0 ? 2 : dChips > 0 ? 1 : 0;
+  const steps = ["Describe", "Interpret", "Screen"];
+
   return (
     <div className="aside-hide" style={{ flex: "1 1 0", background: T.ink, color: "#fff", padding: 48,
       display: "flex", flexDirection: "column", justifyContent: "center" }}>
-      <div className="mono" style={{ fontSize: 12.5, color: "#8B90A0", marginBottom: 20, letterSpacing: "0.04em" }}>
-        DESCRIBE → INTERPRET → SCREEN
+      <div className="mono" style={{ fontSize: 12.5, marginBottom: 22, letterSpacing: "0.04em", display: "flex", gap: 8 }}>
+        {steps.map((s, i) => (
+          <span key={s} style={{ color: i === phase ? "#C6CAF7" : "#6A6F82", transition: "color .3s" }}>
+            {s.toUpperCase()}{i < 2 ? "  →" : ""}
+          </span>
+        ))}
       </div>
-      <div className="disp" style={{ fontSize: 30, fontWeight: 500, lineHeight: 1.28, letterSpacing: "-0.02em", maxWidth: 420 }}>
+      <div className="disp" style={{ fontSize: 27, fontWeight: 500, lineHeight: 1.28, letterSpacing: "-0.02em", maxWidth: 430, marginBottom: 28 }}>
         Say what you want in plain English. Watch it become a screen you can edit.
       </div>
-      <div style={{ marginTop: 32, display: "flex", flexWrap: "wrap", gap: 8, maxWidth: 440 }}>
-        {["P/E < 15", "Div yield > 3%", "Beta < 1.0", "Rev growth > 15%"].map((c) => (
-          <span key={c} className="mono" style={{ fontSize: 12.5, padding: "6px 11px", borderRadius: 8,
-            background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", color: "#D7DAE4" }}>{c}</span>
-        ))}
+
+      <div style={{ maxWidth: 440, background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.10)", borderRadius: 14, padding: 16 }}>
+        <div className="mono" style={{ fontSize: 13, color: "#D7DAE4", minHeight: 40, lineHeight: 1.5,
+          display: "flex", alignItems: "center", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.10)", borderRadius: 9, padding: "8px 11px" }}>
+          <span>{dTyped}</span>{!reduce && <span className="cursor" style={{ marginLeft: 1, color: "#8E93FF" }}>▍</span>}
+        </div>
+
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginTop: 12, minHeight: 26 }}>
+          {cur.chips.slice(0, dChips).map((c) => (
+            <span key={c} className={reduce ? "mono" : "mono chip-enter"} style={{ fontSize: 12, padding: "5px 10px", borderRadius: 8,
+              background: "rgba(142,147,255,0.14)", border: "1px solid rgba(142,147,255,0.28)", color: "#C6CAF7" }}>{c}</span>
+          ))}
+        </div>
+
+        {dRows > 0 && (
+          <div style={{ marginTop: 14, borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 10 }}>
+            <div className="mono" style={{ fontSize: 10.5, color: "#6A6F82", letterSpacing: "0.05em", marginBottom: 7 }}>{cur.rank.toUpperCase()}</div>
+            {cur.rows.slice(0, dRows).map((r) => (
+              <div key={r[0]} className={reduce ? "" : "demo-row"} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0" }}>
+                <span className="mono" style={{ fontSize: 12.5, color: "#EDEEF5", fontWeight: 500, width: 58 }}>{r[0]}</span>
+                <span className="mono" style={{ fontSize: 12.5, color: "#9AA0AB", flex: 1, textAlign: "right", paddingRight: 14 }}>{r[1]}</span>
+                <span className="mono" style={{ fontSize: 12.5, color: r[2].startsWith("-") ? "#E58C84" : "#5FC79E", width: 48, textAlign: "right" }}>{r[2]}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
