@@ -20,7 +20,7 @@ function Logo() {
 
 const STEPS = [
   ["01", "Describe the idea", "Write the screen the way you would explain it to another person."],
-  ["02", "Parse translates it", "Your words are mapped to explicit financial metrics, thresholds, and a ranking. The model builds the screen; it does not choose stocks directly."],
+  ["02", "Parse translates it", "Your words are mapped to explicit metrics, thresholds, and a ranking. The model builds the screen; it does not choose stocks directly."],
   ["03", "Inspect the interpretation", "Every inferred condition is shown as a filter. When wording is ambiguous, Parse surfaces the assumption rather than hiding it."],
   ["04", "Stay in control", "Change or remove filters and rerun the screen. Your edits remain visible and intentional."],
 ];
@@ -38,7 +38,7 @@ export default function Methodology() {
       <header style={{ borderBottom: `1px solid ${T.border}` }}>
         <div style={{ maxWidth: 920, margin: "0 auto", padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <a href="/" style={{ display: "inline-flex", gap: 10, alignItems: "center", textDecoration: "none", color: T.ink }}><Logo /><span style={{ fontFamily: DISP, fontWeight: 600 }}>Parse</span></a>
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}><FeedbackButton className="m-btn m-ghost" /><a href="/" className="m-btn m-primary">Open Parse</a></div>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}><FeedbackButton className="m-btn m-ghost" /><a href="/try" className="m-btn m-primary">Try Parse</a></div>
         </div>
       </header>
 
@@ -59,15 +59,17 @@ export default function Methodology() {
 
         <section style={{ marginTop: 38, maxWidth: 760 }}>
           <h2 style={{ fontFamily: DISP, fontSize: 22, margin: "0 0 10px", fontWeight: 600 }}>When wording is ambiguous</h2>
-          <p style={{ color: T.inkSoft, fontSize: 15, lineHeight: 1.65, margin: 0 }}>Ideas such as “safe,” “cheap,” and “quality” do not map to one universally correct metric. Parse makes an interpretation, shows the resulting filters, and calls out assumptions when they matter. The user gets the final say.</p>
+          <p style={{ color: T.inkSoft, fontSize: 15, lineHeight: 1.65, margin: 0 }}>Ideas such as “safe,” “cheap,” and “quality” do not map to one universally correct metric. Parse makes an interpretation, shows the resulting filters, and calls out assumptions when they matter. You get the final say.</p>
         </section>
 
         <section style={{ marginTop: 34, background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 14, padding: 20, maxWidth: 760 }}>
           <h2 style={{ fontFamily: DISP, fontSize: 19, margin: "0 0 12px", fontWeight: 600 }}>Data and current scope</h2>
-          <div style={{ display: "grid", gap: 9, color: T.inkSoft, fontSize: 14.5, lineHeight: 1.5 }}>
+          <div style={{ display: "grid", gap: 9, color: T.inkSoft, fontSize: 14.5, lineHeight: 1.55 }}>
             <div><b style={{ color: T.ink }}>Universe:</b> S&amp;P 500 and Nasdaq 100.</div>
-            <div><b style={{ color: T.ink }}>Refresh cadence:</b> cached fundamentals, prices, and technical fields are refreshed daily. Parse is not a real-time market-data terminal.</div>
-            <div><b style={{ color: T.ink }}>Missing data:</b> a company is excluded when a required metric for the active screen is unavailable.</div>
+            <div><b style={{ color: T.ink }}>Data sources:</b> company profiles, fundamental metrics, and quote fields are sourced through Finnhub. Historical price series used to calculate technical indicators are sourced from Yahoo Finance by default; the ingestion pipeline can also use Finnhub candles.</div>
+            <div><b style={{ color: T.ink }}>Refresh cadence:</b> Parse stores a cached screening dataset that is refreshed daily. It is not a real-time market-data terminal.</div>
+            <div><b style={{ color: T.ink }}>Derived fields:</b> RSI, moving averages, weekly change, and distance from the 52-week high are calculated from historical price data when available.</div>
+            <div><b style={{ color: T.ink }}>Missing data:</b> a company is excluded when a metric required by the active screen is unavailable.</div>
             <div><b style={{ color: T.ink }}>Purpose:</b> research and exploration, not investment advice or a recommendation to buy or sell a security.</div>
           </div>
         </section>
