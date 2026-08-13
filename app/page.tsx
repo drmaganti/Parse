@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { supabase } from "../lib/supabase";
-import { FEEDBACK_URL } from "../lib/site";
+import Landing from "../components/Landing";
+import FeedbackButton from "../components/FeedbackButton";
 import { FIELDS, RANKINGS, SECTORS, type Filter, type StockRow } from "../lib/fields";
 import { runScreen, type ScreenResult } from "../lib/screen";
 
@@ -32,6 +33,7 @@ const EXAMPLES = [
 export default function Page() {
   const [user, setUser] = useState<{ email: string } | null>(null);
   const [booting, setBooting] = useState(true);
+  const [showAuth, setShowAuth] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -47,12 +49,9 @@ export default function Page() {
   }, []);
 
   if (booting) return <div style={{ minHeight: "100vh", background: T.bg }} />;
-  return (
-    <>
-      <BaseStyle />
-      {user ? <Screener user={user} /> : <Auth />}
-    </>
-  );
+  if (user) return <><BaseStyle /><Screener user={user} /></>;
+  if (showAuth) return <><BaseStyle /><Auth onBack={() => setShowAuth(false)} /></>;
+  return <Landing mode="home" onGetStarted={() => setShowAuth(true)} />;
 }
 
 function BaseStyle() {
@@ -104,7 +103,7 @@ function BaseStyle() {
 }
 
 /* ------------------------------ Auth ------------------------------ */
-function Auth() {
+function Auth({ onBack }: { onBack?: () => void }) {
   const [mode, setMode] = useState<"signup" | "signin">("signup");
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
@@ -137,6 +136,9 @@ function Auth() {
     <div className="scr-root" style={{ display: "flex", minHeight: "100vh" }}>
       <div style={{ flex: "1 1 0", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
         <div style={{ width: "100%", maxWidth: 380 }}>
+          {onBack && (
+            <button onClick={onBack} style={{ background: "none", border: "none", padding: 0, marginBottom: 18, color: T.inkSoft, fontSize: 13.5, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5 }}>← Back</button>
+          )}
           <Brand />
           <h1 className="disp" style={{ fontSize: 26, fontWeight: 600, letterSpacing: "-0.02em", margin: "28px 0 6px" }}>
             {mode === "signup" ? "Create your account" : "Welcome back"}
@@ -164,9 +166,9 @@ function Auth() {
             </button>
           </div>
 
-          <div style={{ marginTop: 26, paddingTop: 16, borderTop: `1px solid ${T.border}`, fontSize: 13, color: T.inkFaint, display: "flex", gap: 14 }}>
+          <div style={{ marginTop: 26, paddingTop: 16, borderTop: `1px solid ${T.border}`, fontSize: 13, color: T.inkFaint, display: "flex", gap: 14, alignItems: "center" }}>
             <a href="/about" style={{ color: T.inkSoft, textDecoration: "none" }}>About</a>
-            <a href={FEEDBACK_URL} style={{ color: T.inkSoft, textDecoration: "none" }}>Feedback</a>
+            <FeedbackButton style={{ background: "none", border: "none", color: T.inkSoft, fontSize: 13, cursor: "pointer", padding: 0, fontFamily: "inherit" }} />
           </div>
         </div>
       </div>
@@ -176,14 +178,14 @@ function Auth() {
 }
 
 const DEMO = [
-  { q: "Cheap large caps with a P/E under 15", rank: "Cheapest first",
-    chips: ["P/E < 15", "Mkt cap > $10B"],
+  { q: "Cheap large caps", rank: "Cheapest first", note: "",
+    chips: ["P/E < 15", "P/B < 3"],
     rows: [["BRK.B", "9.4", "+0.4%"], ["JPM", "12.8", "+0.9%"], ["BAC", "12.1", "+1.0%"]] },
-  { q: "Dividend payers yielding over 3%", rank: "Highest yield",
-    chips: ["Div yield > 3%", "Beta < 1.2"],
+  { q: "Safe dividend stocks", rank: "Highest yield", note: "read \u201Csafe\u201D as low volatility",
+    chips: ["Div yield > 3%", "Beta < 1.0"],
     rows: [["VZ", "6.1%", "-0.9%"], ["PFE", "5.9%", "-4.1%"], ["T", "5.4%", "+0.5%"]] },
-  { q: "Stocks more than 15% off their 52-week highs", rank: "Most beaten-down",
-    chips: ["% off high < -15%"],
+  { q: "Beaten-down but still growing", rank: "Most beaten-down", note: "",
+    chips: ["% off high < -15%", "Rev growth > 0%"],
     rows: [["INTC", "-38%", "-6.4%"], ["NKE", "-31%", "-5.8%"], ["BA", "-24%", "-3.9%"]] },
 ];
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -256,6 +258,10 @@ function AuthAside() {
               background: "rgba(142,147,255,0.14)", border: "1px solid rgba(142,147,255,0.28)", color: "#C6CAF7" }}>{c}</span>
           ))}
         </div>
+
+        {cur.note && dChips >= cur.chips.length && (
+          <div className="mono" style={{ fontSize: 11, color: "#7A7F92", marginTop: 7 }}>· {cur.note}</div>
+        )}
 
         {dRows > 0 && (
           <div style={{ marginTop: 14, borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 10 }}>
@@ -513,7 +519,7 @@ function TopBar({ email, onSignOut }: { email: string; onSignOut: () => void }) 
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <span className="user-hide" style={{ fontSize: 13.5, color: T.inkSoft }}>{email}</span>
           <a href="/about" className="btn btn-ghost btn-sm" style={{ textDecoration: "none" }}>About</a>
-          <a href={FEEDBACK_URL} className="btn btn-ghost btn-sm" style={{ textDecoration: "none" }}>Feedback</a>
+          <FeedbackButton className="btn btn-ghost btn-sm" />
           <button className="btn btn-neutral btn-sm" onClick={onSignOut}>Sign out</button>
         </div>
       </div>

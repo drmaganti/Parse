@@ -65,3 +65,21 @@ create policy "own screens select" on public.saved_screens
 drop policy if exists "own screens write" on public.saved_screens;
 create policy "own screens write" on public.saved_screens
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- ============================================================
+-- Feedback — anyone (signed in or not) can submit; nobody can read
+-- back via the API. Read submissions in the Supabase table editor.
+-- ============================================================
+create table if not exists public.feedback (
+  id          uuid primary key default gen_random_uuid(),
+  email       text,
+  message     text not null,
+  created_at  timestamptz not null default now()
+);
+
+alter table public.feedback enable row level security;
+
+drop policy if exists "feedback insert" on public.feedback;
+create policy "feedback insert" on public.feedback
+  for insert with check (true);
+-- No select policy => submissions are write-only through the anon key.
