@@ -13,9 +13,9 @@ const T = {
 const DISP = "'Space Grotesk', system-ui, sans-serif";
 
 const FEATURES = [
-  { title: "No filter menus", line: "Describe your idea. Parse picks the filters." },
-  { title: "No syntax", line: "Say it in plain words. Parse maps the metrics." },
-  { title: "No black box", line: "Every inferred filter is visible, editable, and yours to correct." },
+  { title: "Say what you mean", line: "Describe the kind of company you’re looking for in everyday language." },
+  { title: "See how Parse read it", line: "Your idea becomes explicit financial filters—not a hidden AI answer." },
+  { title: "Change anything", line: "Adjust a metric, remove a condition, or refine the screen yourself." },
 ];
 
 function Logo({ size = 26 }: { size?: number }) {
@@ -69,8 +69,8 @@ export default function Landing({ mode, onGetStarted }: { mode: "home" | "about"
             <h1 style={{ fontFamily: DISP, fontSize: 40, fontWeight: 600, letterSpacing: "-0.025em", lineHeight: 1.06, margin: "0 0 16px" }}>
               Screen stocks the way you think.
             </h1>
-            <p style={{ color: T.inkSoft, fontSize: 17, lineHeight: 1.5, margin: "0 0 24px", maxWidth: 410 }}>
-              Type a sentence. Get a screen you can inspect and edit. No filter menus to learn.
+            <p style={{ color: T.inkSoft, fontSize: 17, lineHeight: 1.5, margin: "0 0 24px", maxWidth: 430 }}>
+              Describe what you’re looking for. Parse turns it into a screen you can see, change, and run.
             </p>
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               <a className="ln-btn ln-primary" href="/try">Try Parse</a>
@@ -92,13 +92,18 @@ export default function Landing({ mode, onGetStarted }: { mode: "home" | "about"
           ))}
         </div>
 
-        <div style={{ fontFamily: DISP, fontSize: 21, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.3, margin: "44px 0 12px", maxWidth: 660 }}>
-          The skill was never the screener — it was knowing which filters to set. Parse handles the translation without hiding it.
+        <div style={{ margin: "44px 0 12px", maxWidth: 680 }}>
+          <div style={{ fontFamily: DISP, fontSize: 21, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.3 }}>
+            The hard part isn’t using a stock screener. It’s knowing what to screen for.
+          </div>
+          <p style={{ color: T.inkSoft, fontSize: 14.5, lineHeight: 1.55, margin: "10px 0 0" }}>
+            Parse turns your idea into filters you can inspect and change.
+          </p>
         </div>
-        <a href="/methodology" className="ln-link">See how Parse interprets a screen and handles ambiguity →</a>
+        <a href="/methodology" className="ln-link">See how Parse turns words into filters →</a>
 
-        <div style={{ fontSize: 13.5, color: T.inkSoft, background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 12, padding: "13px 16px", maxWidth: 660, marginTop: 32 }}>
-          <b>Current scope:</b> S&amp;P 500 and Nasdaq 100, with data refreshed daily. Parse is a research tool, not investment advice.
+        <div style={{ fontSize: 13.5, color: T.inkSoft, background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 12, padding: "13px 16px", maxWidth: 680, marginTop: 32 }}>
+          <b>Currently screens the S&amp;P 500 and Nasdaq 100.</b> Data refreshed daily. Research tool only—not investment advice.
         </div>
 
         <div style={{ marginTop: 34, paddingTop: 22, borderTop: `1px solid ${T.border}`, fontSize: 14, color: T.inkSoft, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
