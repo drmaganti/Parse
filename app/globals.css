@@ -8,3 +8,23 @@ body {
   font-family: 'Inter', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+
+/* Legacy app surfaces still use the original #969CA7 faint token inline.
+   Raise those small-text uses to WCAG-AA contrast without changing layout. */
+.scr-root [style*="#969CA7"],
+.scr-root [style*="rgb(150, 156, 167)"] {
+  color: #68707D !important;
+}
+.scr-root .ph-loop {
+  color: #68707D !important;
+}
+
+/* The legacy signed-in navigation now points through the /about redirect.
+   Present the destination by its useful name rather than the old page label. */
+.scr-root a[href="/about"] {
+  font-size: 0 !important;
+}
+.scr-root a[href="/about"]::after {
+  content: "How it works";
+  font-size: 13.5px;
+}
