@@ -9,13 +9,18 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Keep the animated homepage demo on a fixed footprint so scene changes
-   never cause the hero grid (and the rest of the page) to shift vertically. */
+/* Keep the animated homepage demo on a fixed, isolated footprint so scene
+   changes cannot shift the hero grid or trigger browser scroll anchoring. */
+.ln2-hero {
+  overflow-anchor: none;
+}
 .ln2-hero > div:last-child {
   height: 299px !important;
   min-height: 299px !important;
   max-height: 299px !important;
   overflow: hidden !important;
+  contain: size layout paint;
+  overflow-anchor: none;
 }
 
 /* Legacy app surfaces still use the original #969CA7 faint token inline.
