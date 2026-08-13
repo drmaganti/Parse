@@ -15,7 +15,7 @@ const DISP = "'Space Grotesk', system-ui, sans-serif";
 const FEATURES = [
   { title: "No filter menus", line: "Describe your idea. Parse picks the filters." },
   { title: "No syntax", line: "Say it in plain words. Parse maps the metrics." },
-  { title: "No black box", line: "Every filter is an editable chip — and it flags its guesses." },
+  { title: "No black box", line: "Every inferred filter is visible, editable, and yours to correct." },
 ];
 
 function Logo({ size = 26 }: { size?: number }) {
@@ -30,19 +30,23 @@ function Logo({ size = 26 }: { size?: number }) {
 }
 
 export default function Landing({ mode, onGetStarted }: { mode: "home" | "about"; onGetStarted?: () => void }) {
+  void mode;
+  void onGetStarted;
   return (
     <div style={{ fontFamily: "'Inter', system-ui, sans-serif", color: T.ink, background: T.bg, minHeight: "100vh" }}>
       <style>{`
-        .ln-btn { display:inline-flex; align-items:center; justify-content:center; gap:7px; font-family:inherit; font-weight:550; font-size:14.5px; height:40px; padding:0 18px; border-radius:10px; border:1px solid transparent; cursor:pointer; text-decoration:none; transition:background .14s; }
+        .ln-btn { display:inline-flex; align-items:center; justify-content:center; gap:7px; font-family:inherit; font-weight:550; font-size:14.5px; height:40px; padding:0 18px; border-radius:10px; border:1px solid transparent; cursor:pointer; text-decoration:none; transition:background .14s,border-color .14s; }
         .ln-sm { height:34px; font-size:13.5px; padding:0 14px; border-radius:9px; }
         .ln-primary { background:${T.accent}; color:#fff; }
         .ln-primary:hover { background:${T.accentInk}; }
         .ln-ghost { background:transparent; color:${T.accent}; }
         .ln-ghost:hover { background:#ECEEFA; }
+        .ln-neutral { background:${T.surface}; color:${T.inkSoft}; border-color:${T.border}; }
+        .ln-neutral:hover { border-color:#D4D8DF; }
         .ln-link { background:none; border:none; color:${T.accent}; cursor:pointer; font-family:inherit; font-size:14px; padding:0; text-decoration:none; }
         .ln-hero { display:grid; grid-template-columns:1.05fr .95fr; gap:40px; align-items:center; }
         .ln-cards { display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; margin-top:12px; }
-        @media (max-width:760px){ .ln-hero{ grid-template-columns:1fr; gap:28px; } .ln-cards{ grid-template-columns:1fr; } }
+        @media (max-width:760px){ .ln-hero{ grid-template-columns:1fr; gap:28px; } .ln-cards{ grid-template-columns:1fr; } .ln-signin{ display:none; } }
       `}</style>
 
       <header style={{ borderBottom: `1px solid ${T.border}` }}>
@@ -50,12 +54,11 @@ export default function Landing({ mode, onGetStarted }: { mode: "home" | "about"
           <a href="/" style={{ display: "inline-flex", alignItems: "center", gap: 10, textDecoration: "none", color: T.ink }}>
             <Logo /><span style={{ fontFamily: DISP, fontSize: 17, fontWeight: 600 }}>Parse</span>
           </a>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {mode === "home" && <a href="/about" className="ln-btn ln-ghost ln-sm">About</a>}
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <a href="/methodology" className="ln-btn ln-ghost ln-sm">How it works</a>
             <FeedbackButton className="ln-btn ln-ghost ln-sm" />
-            {mode === "home"
-              ? <button className="ln-btn ln-primary ln-sm" onClick={onGetStarted}>Get started</button>
-              : <a href="/" className="ln-btn ln-primary ln-sm">Open Parse</a>}
+            <a href="/account?mode=signin" className="ln-btn ln-neutral ln-sm ln-signin">Sign in</a>
+            <a href="/try" className="ln-btn ln-primary ln-sm">Try Parse</a>
           </div>
         </div>
       </header>
@@ -66,12 +69,16 @@ export default function Landing({ mode, onGetStarted }: { mode: "home" | "about"
             <h1 style={{ fontFamily: DISP, fontSize: 40, fontWeight: 600, letterSpacing: "-0.025em", lineHeight: 1.06, margin: "0 0 16px" }}>
               Screen stocks the way you think.
             </h1>
-            <p style={{ color: T.inkSoft, fontSize: 17, lineHeight: 1.5, margin: "0 0 26px", maxWidth: 400 }}>
-              Type a sentence. Get a screen you can edit. No filters to learn.
+            <p style={{ color: T.inkSoft, fontSize: 17, lineHeight: 1.5, margin: "0 0 24px", maxWidth: 410 }}>
+              Type a sentence. Get a screen you can inspect and edit. No filter menus to learn.
             </p>
-            {mode === "home"
-              ? <button className="ln-btn ln-primary" onClick={onGetStarted}>Try Parse</button>
-              : <a className="ln-btn ln-primary" href="/">Try Parse</a>}
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <a className="ln-btn ln-primary" href="/try">Try Parse</a>
+              <span style={{ fontSize: 13.5, color: T.inkSoft }}>No account required.</span>
+            </div>
+            <div style={{ marginTop: 13, fontSize: 12.5, color: T.inkSoft }}>
+              S&amp;P 500 + Nasdaq 100 · refreshed daily
+            </div>
           </div>
           <ProductDemo />
         </div>
@@ -85,12 +92,13 @@ export default function Landing({ mode, onGetStarted }: { mode: "home" | "about"
           ))}
         </div>
 
-        <div style={{ fontFamily: DISP, fontSize: 21, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.3, margin: "44px 0", maxWidth: 640 }}>
-          The skill was never the screener — it was knowing which filters to set. Parse does that part.
+        <div style={{ fontFamily: DISP, fontSize: 21, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.3, margin: "44px 0 12px", maxWidth: 660 }}>
+          The skill was never the screener — it was knowing which filters to set. Parse handles the translation without hiding it.
         </div>
+        <a href="/methodology" className="ln-link">See how Parse interprets a screen and handles ambiguity →</a>
 
-        <div style={{ fontSize: 13.5, color: T.inkSoft, background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 12, padding: "13px 16px", maxWidth: 640 }}>
-          <b>S&amp;P 500 and Nasdaq 100</b>, refreshed daily. Research, not investment advice.
+        <div style={{ fontSize: 13.5, color: T.inkSoft, background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 12, padding: "13px 16px", maxWidth: 660, marginTop: 32 }}>
+          <b>Current scope:</b> S&amp;P 500 and Nasdaq 100, with data refreshed daily. Parse is a research tool, not investment advice.
         </div>
 
         <div style={{ marginTop: 34, paddingTop: 22, borderTop: `1px solid ${T.border}`, fontSize: 14, color: T.inkSoft, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
