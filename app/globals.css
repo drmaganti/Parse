@@ -9,6 +9,15 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Keep the animated homepage demo on a fixed footprint so scene changes
+   never cause the hero grid (and the rest of the page) to shift vertically. */
+.ln2-hero > div:last-child {
+  height: 299px !important;
+  min-height: 299px !important;
+  max-height: 299px !important;
+  overflow: hidden !important;
+}
+
 /* Legacy app surfaces still use the original #969CA7 faint token inline.
    Raise those small-text uses to WCAG-AA contrast without changing layout. */
 .scr-root [style*="#969CA7"],
