@@ -22,7 +22,7 @@ export default function Account() {
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("mode") === "signin") setMode("signin");
-    supabase.auth.getSession().then(({ data }) => { if (data.session) router.replace("/"); });
+    supabase.auth.getSession().then(({ data }) => { if (data.session) router.replace("/app"); });
   }, [router]);
 
   const submit = async () => {
@@ -34,12 +34,12 @@ export default function Account() {
       if (mode === "signup") {
         const { data, error } = await supabase.auth.signUp({ email, password: pw });
         if (error) throw error;
-        if (data.session) router.replace("/");
+        if (data.session) router.replace("/app");
         else setNote("Account created. Check your email to confirm it, then sign in.");
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password: pw });
         if (error) throw error;
-        router.replace("/");
+        router.replace("/app");
       }
     } catch (e: any) { setError(e?.message || "Something went wrong."); }
     finally { setBusy(false); }
