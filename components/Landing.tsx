@@ -21,11 +21,11 @@ const FEATURES = [
 
 const SCREEN_IDEAS = [
   ["cheap-large-cap-stocks", "Cheap large-cap stocks", "Large caps with a P/E under 15"],
-  ["profitable-stocks-near-52-week-lows", "Profitable stocks near their lows", "Profitable companies well below 52-week highs"],
+  ["growing-stocks-near-52-week-lows", "Growing stocks near their lows", "Positive revenue growth well below 52-week highs"],
   ["high-growth-reasonable-valuation", "Growth at a reasonable valuation", "Revenue growth above 20% with a valuation ceiling"],
   ["high-dividend-low-volatility-stocks", "High dividend, lower volatility", "Yield above 3% with beta below 1"],
   ["beaten-down-still-growing", "Beaten-down but still growing", "Price weakness without negative revenue growth"],
-  ["quality-momentum-stocks", "Quality with momentum", "Profitable companies holding near recent highs"],
+  ["growing-stocks-with-momentum", "Growth with momentum", "Revenue growth plus recent price strength"],
 ];
 
 function Logo({ size = 26 }: { size?: number }) {
