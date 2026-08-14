@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
+import { trackEvent } from "../../lib/analytics";
 
 const T = { bg: "#F4F5F7", surface: "#FFFFFF", border: "#E6E8EC", ink: "#15171C", inkSoft: "#565C67", accent: "#2C36A8", accentInk: "#232A85", loss: "#C33328" };
 const DISP = "'Space Grotesk', system-ui, sans-serif";
@@ -30,18 +31,24 @@ export default function Account() {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return setError("Enter a valid email address.");
     if (pw.length < 6) return setError("Use at least 6 characters for your password.");
     setBusy(true);
+    trackEvent(mode === "signup" ? "signup_started" : "signin_started");
     try {
       if (mode === "signup") {
         const { data, error } = await supabase.auth.signUp({ email, password: pw });
         if (error) throw error;
+        trackEvent("signup_completed", { email_confirmation_required: !data.session });
         if (data.session) router.replace("/app");
         else setNote("Account created. Check your email to confirm it, then sign in.");
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password: pw });
         if (error) throw error;
+        trackEvent("signin_completed");
         router.replace("/app");
       }
-    } catch (e: any) { setError(e?.message || "Something went wrong."); }
+    } catch (e: any) {
+      setError(e?.message || "Something went wrong.");
+      trackEvent(mode === "signup" ? "signup_error" : "signin_error");
+    }
     finally { setBusy(false); }
   };
 
