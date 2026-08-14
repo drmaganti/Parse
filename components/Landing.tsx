@@ -4,6 +4,7 @@ import React from "react";
 import ProductDemo from "./ProductDemo";
 import FeedbackButton from "./FeedbackButton";
 import { PORTFOLIO_URL, GITHUB_URL } from "../lib/site";
+import { trackEvent } from "../lib/analytics";
 
 const T = {
   bg: "#F4F5F7", surface: "#FFFFFF", surfaceAlt: "#FAFBFC",
@@ -16,6 +17,15 @@ const FEATURES = [
   { title: "Say what you mean", line: "Describe the kind of company you’re looking for in everyday language." },
   { title: "See how Parse read it", line: "Your idea becomes explicit financial filters—not a hidden AI answer." },
   { title: "Change anything", line: "Adjust a metric, remove a condition, or refine the screen yourself." },
+];
+
+const SCREEN_IDEAS = [
+  ["cheap-large-cap-stocks", "Cheap large-cap stocks", "Large caps with a P/E under 15"],
+  ["profitable-stocks-near-52-week-lows", "Profitable stocks near their lows", "Profitable companies well below 52-week highs"],
+  ["high-growth-reasonable-valuation", "Growth at a reasonable valuation", "Revenue growth above 20% with a valuation ceiling"],
+  ["high-dividend-low-volatility-stocks", "High dividend, lower volatility", "Yield above 3% with beta below 1"],
+  ["beaten-down-still-growing", "Beaten-down but still growing", "Price weakness without negative revenue growth"],
+  ["quality-momentum-stocks", "Quality with momentum", "Profitable companies holding near recent highs"],
 ];
 
 function Logo({ size = 26 }: { size?: number }) {
@@ -32,6 +42,7 @@ function Logo({ size = 26 }: { size?: number }) {
 export default function Landing({ mode, onGetStarted }: { mode: "home" | "about"; onGetStarted?: () => void }) {
   void mode;
   void onGetStarted;
+  const trackTry = (placement: string) => trackEvent("try_parse_clicked", { placement });
   return (
     <div style={{ fontFamily: "'Inter', system-ui, sans-serif", color: T.ink, background: T.bg, minHeight: "100vh" }}>
       <style>{`
@@ -46,7 +57,9 @@ export default function Landing({ mode, onGetStarted }: { mode: "home" | "about"
         .ln-link { background:none; border:none; color:${T.accent}; cursor:pointer; font-family:inherit; font-size:14px; padding:0; text-decoration:none; }
         .ln-hero { display:grid; grid-template-columns:1.05fr .95fr; gap:40px; align-items:center; }
         .ln-cards { display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; margin-top:12px; }
-        @media (max-width:760px){ .ln-hero{ grid-template-columns:1fr; gap:28px; } .ln-cards{ grid-template-columns:1fr; } .ln-signin{ display:none; } }
+        .ln-screen-card { display:block; background:${T.surface}; border:1px solid ${T.border}; border-radius:12px; padding:16px; color:${T.ink}; text-decoration:none; transition:transform .14s,border-color .14s; }
+        .ln-screen-card:hover { transform:translateY(-2px); border-color:#D4D8DF; }
+        @media (max-width:760px){ .ln-hero{ grid-template-columns:1fr; gap:28px; } .ln-cards{ grid-template-columns:1fr; } .ln-signin,.ln-screen-nav{ display:none; } }
       `}</style>
 
       <header style={{ borderBottom: `1px solid ${T.border}` }}>
@@ -55,10 +68,11 @@ export default function Landing({ mode, onGetStarted }: { mode: "home" | "about"
             <Logo /><span style={{ fontFamily: DISP, fontSize: 17, fontWeight: 600 }}>Parse</span>
           </a>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <a href="/screens" className="ln-btn ln-ghost ln-sm ln-screen-nav">Screen ideas</a>
             <a href="/methodology" className="ln-btn ln-ghost ln-sm">How it works</a>
             <FeedbackButton className="ln-btn ln-ghost ln-sm" />
             <a href="/account?mode=signin" className="ln-btn ln-neutral ln-sm ln-signin">Sign in</a>
-            <a href="/try" className="ln-btn ln-primary ln-sm">Try Parse</a>
+            <a href="/try" onClick={() => trackTry("header")} className="ln-btn ln-primary ln-sm">Try Parse</a>
           </div>
         </div>
       </header>
@@ -73,7 +87,7 @@ export default function Landing({ mode, onGetStarted }: { mode: "home" | "about"
               Describe what you’re looking for. Parse turns it into a screen you can see, change, and run.
             </p>
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              <a className="ln-btn ln-primary" href="/try">Try Parse</a>
+              <a className="ln-btn ln-primary" href="/try" onClick={() => trackTry("hero")}>Try Parse</a>
               <span style={{ fontSize: 13.5, color: T.inkSoft }}>No account required.</span>
             </div>
             <div style={{ marginTop: 13, fontSize: 12.5, color: T.inkSoft }}>
@@ -92,6 +106,16 @@ export default function Landing({ mode, onGetStarted }: { mode: "home" | "about"
           ))}
         </div>
 
+        <section style={{ marginTop: 44 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 14, marginBottom: 13 }}>
+            <h2 style={{ fontFamily: DISP, fontSize: 21, fontWeight: 600, letterSpacing: "-0.02em", margin: 0 }}>Start with a screen idea</h2>
+            <a href="/screens" className="ln-link">Browse all 20 →</a>
+          </div>
+          <div className="ln-cards">
+            {SCREEN_IDEAS.map(([slug, title, line]) => <a key={slug} href={`/screens/${slug}`} className="ln-screen-card" onClick={() => trackEvent("public_screen_clicked", { slug, placement: "home" })}><div style={{ fontFamily: DISP, fontSize: 15, fontWeight: 600, marginBottom: 6 }}>{title}</div><div style={{ fontSize: 13.5, lineHeight: 1.45, color: T.inkSoft }}>{line}</div><div style={{ marginTop: 10, color: T.accent, fontSize: 13.5 }}>See the screen →</div></a>)}
+          </div>
+        </section>
+
         <div style={{ margin: "44px 0 12px", maxWidth: 680 }}>
           <div style={{ fontFamily: DISP, fontSize: 21, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.3 }}>
             The hard part isn’t using a stock screener. It’s knowing what to screen for.
@@ -108,6 +132,7 @@ export default function Landing({ mode, onGetStarted }: { mode: "home" | "about"
 
         <div style={{ marginTop: 34, paddingTop: 22, borderTop: `1px solid ${T.border}`, fontSize: 14, color: T.inkSoft, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
           <span>Built by Ram Maganti</span><span>·</span>
+          <a href="/screens" style={{ color: T.accent, textDecoration: "none" }}>Screen ideas</a><span>·</span>
           <a href={PORTFOLIO_URL} target="_blank" rel="noopener noreferrer" style={{ color: T.accent, textDecoration: "none" }}>rmaganti.com</a><span>·</span>
           <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" style={{ color: T.accent, textDecoration: "none" }}>GitHub</a><span>·</span>
           <FeedbackButton className="ln-link" />
