@@ -18,7 +18,7 @@ export const MARKETING_PAGES: MarketingPage[] = [
     headline: "Use AI to build the screen, not to hide the reasoning.",
     intro: "Parse is an AI-assisted stock screener for investors who know roughly what they want to find but do not want to translate every idea into a grid of financial fields. Describe the screen in everyday language, inspect how Parse interpreted it, change the filters, and run the screen yourself.",
     sections: [
-      { title: "Natural language in, explicit filters out", body: "Ask for something like ‘profitable technology companies more than 15% below their highs.’ Parse maps the request to concrete fields and thresholds. You can see that interpretation before treating the output as useful research." },
+      { title: "Natural language in, explicit filters out", body: "Ask for something like ‘technology companies with positive revenue growth more than 15% below their highs.’ Parse maps the request to concrete fields and thresholds. You can see that interpretation before treating the output as useful research." },
       { title: "AI is the interface, not the investment thesis", body: "Parse does not generate a mysterious list of stocks and ask you to trust it. The model’s job is narrower: translate your wording into a screening definition. The matching companies come from those visible rules." },
       { title: "Built for exploration", body: "A useful screen is rarely perfect on the first attempt. Change a threshold, remove a condition, or rephrase the request. Parse is designed to make that iteration faster without taking control away from you." },
     ],
@@ -72,7 +72,7 @@ export const MARKETING_PAGES: MarketingPage[] = [
     headline: "Start with the investing idea, not a wall of filter names.",
     intro: "Stock screeners can feel backwards when you are learning: they ask you to choose from dozens of metrics before you know which metrics express the idea you have in mind. Parse lets you begin in ordinary language and then shows you the structured screen underneath.",
     sections: [
-      { title: "Use language you already understand", body: "A beginner can ask for ‘large profitable companies with low P/E ratios’ without first learning the interface conventions of a professional screening terminal." },
+      { title: "Use language you already understand", body: "A beginner can ask for ‘large companies with positive revenue growth and a low P/E’ without first learning the interface conventions of a professional screening terminal." },
       { title: "Learn from the interpretation", body: "Because Parse exposes the filters, it can also help you understand how a qualitative idea maps to measurable criteria. The screen remains something you can question and change." },
       { title: "Screening is not choosing", body: "A stock screen narrows a universe; it does not tell you what to buy. Parse deliberately keeps that distinction visible. Matches are starting points for research, not recommendations." },
     ],
