@@ -8,6 +8,8 @@ export interface ParseResult extends ParsedScreen {
   actions?: RefinementAction[];
 }
 
+export type ParseMode = "new" | "refine";
+
 function vocab() {
   return Object.values(FIELDS)
     .map((m) => `${m.key} (${m.label}${m.unit ? ", " + m.unit : ""}${m.kind === "cat" ? ", one of: " + SECTORS.join("/") : ""})`)
@@ -106,9 +108,10 @@ export async function parseQuery(
   query: string,
   prev: Filter[] = [],
   _lockedIds: string[] = [],
-  currentRanking = "marketCap"
+  currentRanking = "marketCap",
+  mode?: ParseMode
 ): Promise<ParseResult> {
-  const isRefine = prev.length > 0;
+  const isRefine = mode ? mode === "refine" : prev.length > 0;
   try {
     const rawText = await complete({ system: isRefine ? buildRefineSystem(prev, currentRanking) : buildNewSystem(), user: query });
     const parsed = extractJson(rawText);
@@ -138,6 +141,6 @@ export async function parseQuery(
       source: "model",
     };
   } catch {
-    return { ...fallbackParse(query, prev, [], currentRanking), source: "fallback" };
+    return { ...fallbackParse(query, isRefine ? prev : [], [], currentRanking), source: "fallback" };
   }
 }
