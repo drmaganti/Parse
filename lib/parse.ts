@@ -69,9 +69,6 @@ export async function parseQuery(
   const isRefine = mode ? mode === "refine" : prev.length > 0;
   const resolvedMode: ParseMode = isRefine ? "refine" : "new";
 
-  // Explicit filters, ranges, exclusions and supported refinements should not
-  // depend on provider availability. The LLM is reserved for language the
-  // deterministic vocabulary cannot confidently resolve.
   const rules = tryRuleParse(query, isRefine ? prev : [], currentRanking, resolvedMode);
   if (rules) return { ...rules, source: "rules" };
 
@@ -84,9 +81,8 @@ export async function parseQuery(
       const nextRanking = validRanking(parsed.ranking) ?? currentRanking;
       const assumptions = Array.isArray(parsed.assumptions) ? parsed.assumptions.filter((a: any) => typeof a === "string") : [];
       if (!actions.length && nextRanking === currentRanking && assumptions.length === 0) throw new Error("no valid refinement actions");
-      const filters = applyRefinement(prev, actions, "ai");
       return {
-        filters,
+        filters: applyRefinement(prev, actions, "ai"),
         ranking: nextRanking,
         interpretation: typeof parsed.interpretation === "string" ? parsed.interpretation : "Updated the screen.",
         assumptions,
@@ -108,10 +104,9 @@ export async function parseQuery(
     };
   } catch {
     const fallback = fallbackParse(query, isRefine ? prev : [], [], currentRanking, isRefine);
-    if (!fallback.filters.length && !fallback.actions?.length && fallback.assumptions.length === 0) {
-      fallback.assumptions = ["That request uses a metric or concept Parse does not support yet."];
-      fallback.interpretation = "No supported screen change was found.";
-    }
+    if (fallback.assumptions.length === 0) fallback.assumptions = ["That request includes language Parse could not confidently map to a supported criterion."];
+    if (!fallback.actions?.length && isRefine) fallback.interpretation = "No supported screen change was found.";
+    else if (!fallback.filters.length) fallback.interpretation = "No supported filter was found.";
     return { ...fallback, source: "fallback" };
   }
 }
