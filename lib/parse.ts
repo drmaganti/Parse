@@ -1,11 +1,11 @@
 import { FIELDS, RANKINGS, SECTORS, type Filter } from "./fields";
 import { complete } from "./llm";
-import { fallbackParse, type ParsedScreen } from "./fallback-parse";
+import { fallbackParse, tryRuleParse, type ParsedScreen } from "./fallback-parse";
 import { applyRefinement, validRanking, type RefinementAction } from "./filter-ops";
 import { coerceActions, coerceFilters, enforceRefinementIntent, extractJsonObject } from "./parse-contract";
 
 export interface ParseResult extends ParsedScreen {
-  source: "model" | "fallback";
+  source: "rules" | "model" | "fallback";
   actions?: RefinementAction[];
 }
 
@@ -67,6 +67,14 @@ export async function parseQuery(
   mode?: ParseMode
 ): Promise<ParseResult> {
   const isRefine = mode ? mode === "refine" : prev.length > 0;
+  const resolvedMode: ParseMode = isRefine ? "refine" : "new";
+
+  // Explicit filters, ranges, exclusions and supported refinements should not
+  // depend on provider availability. The LLM is reserved for language the
+  // deterministic vocabulary cannot confidently resolve.
+  const rules = tryRuleParse(query, isRefine ? prev : [], currentRanking, resolvedMode);
+  if (rules) return { ...rules, source: "rules" };
+
   try {
     const rawText = await complete({ system: isRefine ? buildRefineSystem(prev, currentRanking) : buildNewSystem(), user: query });
     const parsed = extractJsonObject(rawText);
@@ -99,6 +107,11 @@ export async function parseQuery(
       source: "model",
     };
   } catch {
-    return { ...fallbackParse(query, isRefine ? prev : [], [], currentRanking, isRefine), source: "fallback" };
+    const fallback = fallbackParse(query, isRefine ? prev : [], [], currentRanking, isRefine);
+    if (!fallback.filters.length && !fallback.actions?.length && fallback.assumptions.length === 0) {
+      fallback.assumptions = ["That request uses a metric or concept Parse does not support yet."];
+      fallback.interpretation = "No supported screen change was found.";
+    }
+    return { ...fallback, source: "fallback" };
   }
 }
