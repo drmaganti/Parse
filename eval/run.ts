@@ -1,62 +1,70 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { parseQuery } from "../lib/parse";
+import { parseQuery, type ParseMode } from "../lib/parse";
 import { fallbackParse } from "../lib/fallback-parse";
-import type { Filter } from "../lib/fields";
-
-// Measures parse quality against eval/cases.json.
-//   npm run eval              → uses the configured model (needs a key)
-//   OFFLINE=1 npm run eval    → uses the rule-based fallback (no key, CI smoke test)
-//
-// Per case: every expected filter must be matched by field+op (+ numeric value),
-// and the ranking must match when the case specifies one. Vague cases instead
-// require at least one assumption to be recorded.
+import type { Filter, Op } from "../lib/fields";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const OFFLINE = process.env.OFFLINE === "1";
 
+interface ExpectedFilter { field: string; op: string; value: number | string; }
+interface RawFilter extends ExpectedFilter { source?: Filter["source"]; }
 interface Case {
   query: string;
-  expect: { filters?: { field: string; op: string; value: number | string }[]; ranking?: string };
+  mode?: ParseMode;
+  previous?: RawFilter[];
+  currentRanking?: string;
+  expect: { filters?: ExpectedFilter[]; ranking?: string; filterCount?: number };
+  reject?: { field: string; op?: string; value?: number | string }[];
   requireAssumptions?: boolean;
+  modelOnly?: boolean;
 }
 
-function matchFilter(exp: { field: string; op: string; value: number | string }, got: Filter[]): boolean {
+function hydrate(raw: RawFilter[] = []): Filter[] {
+  return raw.map((f, i) => ({ id: `eval_${i}_${f.field}`, field: f.field, op: f.op as Op, value: f.value, source: f.source ?? "ai" }));
+}
+
+function matchFilter(exp: ExpectedFilter, got: Filter[]): boolean {
   return got.some((g) => {
     if (g.field !== exp.field || g.op !== exp.op) return false;
-    if (typeof exp.value === "number") {
-      // Accept the model's own threshold if it's in the right direction and
-      // not wildly off; exact match always passes.
-      return Number(g.value) === exp.value || withinReason(exp.op, exp.value, Number(g.value));
-    }
+    if (typeof exp.value === "number") return Number(g.value) === exp.value || withinReason(exp.op, exp.value, Number(g.value));
     return String(g.value).toLowerCase() === String(exp.value).toLowerCase();
   });
 }
 
-// For "> N" a stricter (higher) threshold still honours intent; for "< N" a
-// stricter (lower) one does. Allow a modest band so sensible model choices pass.
 function withinReason(op: string, expVal: number, got: number): boolean {
-  const band = Math.max(Math.abs(expVal) * 0.5, 5);
-  if (op.startsWith(">")) return got >= expVal - band;
-  if (op.startsWith("<")) return got <= expVal + band;
+  if (!Number.isFinite(got)) return false;
+  const band = Math.max(Math.abs(expVal) * 0.15, 1);
+  if (op === ">" || op === ">=") return got >= expVal - band && got <= expVal + band;
+  if (op === "<" || op === "<=") return got >= expVal - band && got <= expVal + band;
   return Math.abs(got - expVal) <= band;
+}
+
+function rejected(rule: { field: string; op?: string; value?: number | string }, got: Filter[]): boolean {
+  return got.some((g) => g.field === rule.field && (!rule.op || g.op === rule.op) && (rule.value === undefined || String(g.value).toLowerCase() === String(rule.value).toLowerCase()));
 }
 
 async function run() {
   const raw = JSON.parse(readFileSync(join(__dir, "cases.json"), "utf8"));
-  const cases: Case[] = raw.cases;
+  const allCases: Case[] = raw.cases;
+  const cases = OFFLINE ? allCases.filter((c) => !c.modelOnly) : allCases;
   const provider = OFFLINE ? "fallback (offline)" : (process.env.LLM_PROVIDER ?? "groq");
-  console.log(`\nParse eval · ${cases.length} cases · ${provider}\n`);
+  console.log(`\nParse eval · ${cases.length}/${allCases.length} cases · ${provider}\n`);
 
   let pass = 0;
   for (const c of cases) {
-    const r = OFFLINE ? fallbackParse(c.query) : await parseQuery(c.query);
+    const previous = hydrate(c.previous);
+    const ranking = c.currentRanking ?? "marketCap";
+    const mode = c.mode ?? (previous.length ? "refine" : "new");
+    const r = OFFLINE
+      ? fallbackParse(c.query, mode === "refine" ? previous : [], [], ranking)
+      : await parseQuery(c.query, mode === "refine" ? previous : [], [], ranking, mode);
     const reasons: string[] = [];
 
-    for (const ef of c.expect.filters ?? []) {
-      if (!matchFilter(ef, r.filters)) reasons.push(`missing ${ef.field}${ef.op}${ef.value}`);
-    }
+    for (const ef of c.expect.filters ?? []) if (!matchFilter(ef, r.filters)) reasons.push(`missing ${ef.field}${ef.op}${ef.value}`);
+    for (const reject of c.reject ?? []) if (rejected(reject, r.filters)) reasons.push(`unexpected ${reject.field}${reject.op ?? ""}${reject.value ?? ""}`);
+    if (c.expect.filterCount !== undefined && r.filters.length !== c.expect.filterCount) reasons.push(`filter count ${r.filters.length}≠${c.expect.filterCount}`);
     if (c.expect.ranking && r.ranking !== c.expect.ranking) reasons.push(`ranking ${r.ranking}≠${c.expect.ranking}`);
     if (c.requireAssumptions && r.assumptions.length === 0) reasons.push("no assumption recorded");
 
@@ -68,9 +76,13 @@ async function run() {
     if (!ok) console.log(`      ✗ ${reasons.join("; ")}`);
   }
 
-  const pct = ((pass / cases.length) * 100).toFixed(0);
+  const pct = cases.length ? ((pass / cases.length) * 100).toFixed(0) : "0";
   console.log(`\n${pass}/${cases.length} passed (${pct}%)\n`);
-  if (!OFFLINE && pass / cases.length < 0.7) process.exitCode = 1;
+  if (OFFLINE) {
+    if (pass !== cases.length) process.exitCode = 1;
+  } else if (cases.length && pass / cases.length < 0.9) {
+    process.exitCode = 1;
+  }
 }
 
 run().catch((e) => { console.error(e); process.exit(1); });
