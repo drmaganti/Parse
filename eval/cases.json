@@ -1,53 +1,95 @@
 {
-  "_comment": "Parse-quality eval set. Explicit cases assert exact filters+ranking; vague cases require the parser to translate the intent and record an assumption. Expand this as you find real queries that parse badly — it's the record that justifies any model or routing change.",
+  "_comment": "Parse P0 regression suite. Covers explicit metrics, combinations, ranges, exclusions, ranking language, assumptions, and additive refinement. OFFLINE=1 runs deterministic cases in CI; model eval uses the same contract.",
   "cases": [
-    {
-      "query": "Cheap large caps with a P/E under 15",
-      "expect": { "filters": [{ "field": "pe", "op": "<", "value": 15 }], "ranking": "value" }
-    },
-    {
-      "query": "Dividend stocks yielding over 4%",
-      "expect": { "filters": [{ "field": "divYield", "op": ">", "value": 4 }], "ranking": "dividend" }
-    },
-    {
-      "query": "Companies growing revenue more than 20% a year",
-      "expect": { "filters": [{ "field": "revGrowth", "op": ">", "value": 20 }], "ranking": "quality" }
-    },
-    {
-      "query": "Technology names near their 52-week highs",
-      "expect": { "filters": [{ "field": "sector", "op": "==", "value": "Technology" }], "ranking": "momentum" }
-    },
-    {
-      "query": "Large caps that have fallen this week",
-      "expect": { "filters": [{ "field": "chg1w", "op": "<", "value": 0 }], "ranking": "decline" }
-    },
-    {
-      "query": "Healthcare stocks with a market cap over 100 billion",
-      "expect": { "filters": [{ "field": "sector", "op": "==", "value": "Healthcare" }, { "field": "marketCap", "op": ">", "value": 100 }] }
-    },
-    {
-      "query": "Low P/B financials",
-      "expect": { "filters": [{ "field": "pb", "op": "<", "value": 3 }, { "field": "sector", "op": "==", "value": "Financials" }], "ranking": "value" }
-    },
-    {
-      "query": "Oversold names with RSI below 30",
-      "expect": { "filters": [{ "field": "rsi", "op": "<", "value": 30 }] }
-    },
-    {
-      "query": "Safe defensive stocks",
-      "expect": { "ranking": "value" }, "requireAssumptions": true
-    },
-    {
-      "query": "Something that won't crash",
-      "expect": {}, "requireAssumptions": true
-    },
-    {
-      "query": "High-quality growth at a reasonable price",
-      "expect": { "filters": [{ "field": "revGrowth", "op": ">", "value": 10 }] }, "requireAssumptions": true
-    },
-    {
-      "query": "Beaten-down large caps that are still growing revenue",
-      "expect": { "filters": [{ "field": "revGrowth", "op": ">", "value": 0 }], "ranking": "decline" }
-    }
+    {"query":"P/E under 20","expect":{"filters":[{"field":"pe","op":"<","value":20}]}},
+    {"query":"P/E at most 18","expect":{"filters":[{"field":"pe","op":"<=","value":18}]}},
+    {"query":"Price-to-earnings above 12","expect":{"filters":[{"field":"pe","op":">","value":12}]}},
+    {"query":"P/B below 3","expect":{"filters":[{"field":"pb","op":"<","value":3}]}},
+    {"query":"Price-to-book at most 4","expect":{"filters":[{"field":"pb","op":"<=","value":4}]}},
+    {"query":"P/S under 5","expect":{"filters":[{"field":"ps","op":"<","value":5}]}},
+    {"query":"Price-to-sales above 2","expect":{"filters":[{"field":"ps","op":">","value":2}]}},
+    {"query":"Dividend stocks yielding over 4%","expect":{"filters":[{"field":"divYield","op":">","value":4}],"ranking":"dividend"}},
+    {"query":"Dividend yield at least 2.5%","expect":{"filters":[{"field":"divYield","op":">=","value":2.5}],"ranking":"dividend"}},
+    {"query":"Beta below 1.2","expect":{"filters":[{"field":"beta","op":"<","value":1.2}]}},
+    {"query":"Beta at most 0.9","expect":{"filters":[{"field":"beta","op":"<=","value":0.9}]}},
+    {"query":"Market cap above $100 billion","expect":{"filters":[{"field":"marketCap","op":">","value":100}]}},
+    {"query":"Market cap at least $50 billion","expect":{"filters":[{"field":"marketCap","op":">=","value":50}]}},
+    {"query":"Revenue growth above 20%","expect":{"filters":[{"field":"revGrowth","op":">","value":20}],"ranking":"quality"}},
+    {"query":"Revenue growth at least 10%","expect":{"filters":[{"field":"revGrowth","op":">=","value":10}],"ranking":"quality"}},
+    {"query":"RSI below 30","expect":{"filters":[{"field":"rsi","op":"<","value":30}]}},
+    {"query":"RSI above 55","expect":{"filters":[{"field":"rsi","op":">","value":55}]}},
+    {"query":"Technology stocks","expect":{"filters":[{"field":"sector","op":"==","value":"Technology"}]}},
+    {"query":"Healthcare stocks","expect":{"filters":[{"field":"sector","op":"==","value":"Healthcare"}]}},
+    {"query":"Financials","expect":{"filters":[{"field":"sector","op":"==","value":"Financials"}]}},
+
+    {"query":"Technology companies with P/E below 20 and revenue growth above 10%","expect":{"filters":[{"field":"sector","op":"==","value":"Technology"},{"field":"pe","op":"<","value":20},{"field":"revGrowth","op":">","value":10}]}},
+    {"query":"Dividend stocks yielding over 3% with beta below 1","expect":{"filters":[{"field":"divYield","op":">","value":3},{"field":"beta","op":"<","value":1}],"ranking":"dividend"}},
+    {"query":"Large caps with P/E under 15","expect":{"filters":[{"field":"marketCap","op":">","value":50},{"field":"pe","op":"<","value":15}]}},
+    {"query":"Healthcare stocks with a market cap above 100 billion","expect":{"filters":[{"field":"sector","op":"==","value":"Healthcare"},{"field":"marketCap","op":">","value":100}]}},
+    {"query":"Cheap large caps with a P/E under 15","expect":{"filters":[{"field":"pe","op":"<","value":15},{"field":"marketCap","op":">","value":50}],"ranking":"value"}},
+    {"query":"Growing technology stocks","expect":{"filters":[{"field":"revGrowth","op":">","value":15},{"field":"sector","op":"==","value":"Technology"}],"ranking":"quality"}},
+    {"query":"High yield financials","expect":{"filters":[{"field":"divYield","op":">","value":3},{"field":"sector","op":"==","value":"Financials"}],"ranking":"dividend"}},
+    {"query":"Safe healthcare stocks","expect":{"filters":[{"field":"beta","op":"<","value":1},{"field":"sector","op":"==","value":"Healthcare"}]},"requireAssumptions":true},
+    {"query":"Beaten-down stocks that still have positive revenue growth","expect":{"filters":[{"field":"chg1w","op":"<","value":-2},{"field":"revGrowth","op":">","value":0}],"ranking":"decline"}},
+    {"query":"Stocks within 5% of their 52-week high","expect":{"filters":[{"field":"from52wHigh","op":">=","value":-5}]}},
+    {"query":"Stocks more than 15% off their 52-week high","expect":{"filters":[{"field":"from52wHigh","op":"<","value":-15}]}},
+    {"query":"Stocks up more than 3% this week","expect":{"filters":[{"field":"chg1w","op":">","value":3}]}},
+    {"query":"Stocks down over 4% this week","expect":{"filters":[{"field":"chg1w","op":"<","value":-4}]}},
+    {"query":"Mega-cap stocks","expect":{"filters":[{"field":"marketCap","op":">","value":200}]}},
+    {"query":"Small-cap stocks","expect":{"filters":[{"field":"marketCap","op":"<","value":20}]}},
+    {"query":"Oversold stocks","expect":{"filters":[{"field":"rsi","op":"<","value":30}]}},
+
+    {"query":"P/E between 10 and 20","expect":{"filters":[{"field":"pe","op":">=","value":10},{"field":"pe","op":"<=","value":20}],"filterCount":2}},
+    {"query":"P/B between 1 and 4","expect":{"filters":[{"field":"pb","op":">=","value":1},{"field":"pb","op":"<=","value":4}],"filterCount":2}},
+    {"query":"P/S between 2 and 6","expect":{"filters":[{"field":"ps","op":">=","value":2},{"field":"ps","op":"<=","value":6}],"filterCount":2}},
+    {"query":"Beta between 0.5 and 1.2","expect":{"filters":[{"field":"beta","op":">=","value":0.5},{"field":"beta","op":"<=","value":1.2}],"filterCount":2}},
+    {"query":"Market cap between 10 and 100 billion","expect":{"filters":[{"field":"marketCap","op":">=","value":10},{"field":"marketCap","op":"<=","value":100}],"filterCount":2}},
+    {"query":"Revenue growth between 5 and 20%","expect":{"filters":[{"field":"revGrowth","op":">=","value":5},{"field":"revGrowth","op":"<=","value":20}],"filterCount":2}},
+    {"query":"Dividend yield between 2 and 5%","expect":{"filters":[{"field":"divYield","op":">=","value":2},{"field":"divYield","op":"<=","value":5}],"ranking":"dividend","filterCount":2}},
+    {"query":"RSI between 30 and 60","expect":{"filters":[{"field":"rsi","op":">=","value":30},{"field":"rsi","op":"<=","value":60}],"filterCount":2}},
+
+    {"query":"Exclude Energy","expect":{"filters":[{"field":"sector","op":"!=","value":"Energy"}]}},
+    {"query":"Stocks excluding Utilities","expect":{"filters":[{"field":"sector","op":"!=","value":"Utilities"}]}},
+    {"query":"Technology companies excluding Energy","expect":{"filters":[{"field":"sector","op":"==","value":"Technology"},{"field":"sector","op":"!=","value":"Energy"}],"filterCount":2}},
+    {"query":"Healthcare except Energy","expect":{"filters":[{"field":"sector","op":"==","value":"Healthcare"},{"field":"sector","op":"!=","value":"Energy"}],"filterCount":2}},
+    {"query":"Avoid Real Estate","expect":{"filters":[{"field":"sector","op":"!=","value":"Real Estate"}]}},
+    {"query":"Financials without Utilities","expect":{"filters":[{"field":"sector","op":"==","value":"Financials"},{"field":"sector","op":"!=","value":"Utilities"}],"filterCount":2}},
+    {"query":"Consumer companies excluding Materials","expect":{"filters":[{"field":"sector","op":"==","value":"Consumer"},{"field":"sector","op":"!=","value":"Materials"}],"filterCount":2}},
+    {"query":"Industrials excluding Energy","expect":{"filters":[{"field":"sector","op":"==","value":"Industrials"},{"field":"sector","op":"!=","value":"Energy"}],"filterCount":2}},
+    {"query":"Tech outside Energy","expect":{"filters":[{"field":"sector","op":"==","value":"Technology"},{"field":"sector","op":"!=","value":"Energy"}],"filterCount":2}},
+    {"query":"Exclude Communications","expect":{"filters":[{"field":"sector","op":"!=","value":"Communications"}]}},
+
+    {"query":"Cheap stocks, cheapest first","expect":{"ranking":"value"}},
+    {"query":"Dividend stocks, highest yield","expect":{"ranking":"dividend"}},
+    {"query":"Growth stocks, highest growth","expect":{"ranking":"quality"}},
+    {"query":"Stocks with strongest momentum","expect":{"ranking":"momentum"}},
+    {"query":"Most beaten-down stocks","expect":{"ranking":"decline"}},
+    {"query":"Largest first","expect":{"ranking":"marketCap"}},
+    {"query":"Rank by P/E","expect":{"ranking":"value"}},
+    {"query":"Rank by market cap","expect":{"ranking":"marketCap"}},
+    {"query":"Something that won't crash","expect":{"filters":[{"field":"beta","op":"<","value":1}]},"requireAssumptions":true},
+    {"query":"Growth at a reasonable price","expect":{"filters":[{"field":"pe","op":"<","value":25}]},"requireAssumptions":true},
+
+    {"query":"Also require revenue growth above 10%","mode":"refine","previous":[{"field":"pe","op":"<","value":20}],"expect":{"filters":[{"field":"pe","op":"<","value":20},{"field":"revGrowth","op":">","value":10}],"ranking":"marketCap","filterCount":2}},
+    {"query":"Add dividend yield above 2%","mode":"refine","previous":[{"field":"pe","op":"<","value":17,"source":"user"}],"expect":{"filters":[{"field":"pe","op":"<","value":17},{"field":"divYield","op":">","value":2}],"ranking":"marketCap","filterCount":2}},
+    {"query":"Exclude Energy","mode":"refine","previous":[{"field":"pe","op":"<","value":20}],"expect":{"filters":[{"field":"pe","op":"<","value":20},{"field":"sector","op":"!=","value":"Energy"}],"filterCount":2}},
+    {"query":"Remove the P/E requirement","mode":"refine","previous":[{"field":"pe","op":"<","value":20},{"field":"sector","op":"==","value":"Technology"}],"expect":{"filters":[{"field":"sector","op":"==","value":"Technology"}],"filterCount":1},"reject":[{"field":"pe"}]},
+    {"query":"Use P/E under 25 instead","mode":"refine","previous":[{"field":"pe","op":"<","value":20},{"field":"sector","op":"==","value":"Technology"}],"expect":{"filters":[{"field":"pe","op":"<","value":25},{"field":"sector","op":"==","value":"Technology"}],"filterCount":2},"reject":[{"field":"pe","op":"<","value":20}]},
+    {"query":"Change P/E to under 18","mode":"refine","previous":[{"field":"pe","op":"<","value":20},{"field":"sector","op":"==","value":"Technology"}],"expect":{"filters":[{"field":"pe","op":"<","value":18},{"field":"sector","op":"==","value":"Technology"}],"filterCount":2}},
+    {"query":"Set beta below 1.2","mode":"refine","previous":[{"field":"beta","op":"<","value":1.5},{"field":"pe","op":"<","value":20}],"expect":{"filters":[{"field":"beta","op":"<","value":1.2},{"field":"pe","op":"<","value":20}],"filterCount":2}},
+    {"query":"Use P/E between 10 and 20 instead","mode":"refine","previous":[{"field":"pe","op":"<","value":30},{"field":"sector","op":"==","value":"Healthcare"}],"expect":{"filters":[{"field":"pe","op":">=","value":10},{"field":"pe","op":"<=","value":20},{"field":"sector","op":"==","value":"Healthcare"}],"filterCount":3}},
+    {"query":"Remove market cap","mode":"refine","previous":[{"field":"pe","op":"<","value":20},{"field":"marketCap","op":">","value":50},{"field":"sector","op":"==","value":"Technology"}],"expect":{"filters":[{"field":"pe","op":"<","value":20},{"field":"sector","op":"==","value":"Technology"}],"filterCount":2},"reject":[{"field":"marketCap"}]},
+    {"query":"Drop the sector filter","mode":"refine","previous":[{"field":"pe","op":"<","value":20},{"field":"marketCap","op":">","value":50},{"field":"sector","op":"==","value":"Technology"}],"expect":{"filters":[{"field":"pe","op":"<","value":20},{"field":"marketCap","op":">","value":50}],"filterCount":2},"reject":[{"field":"sector"}]},
+    {"query":"Delete beta","mode":"refine","previous":[{"field":"beta","op":"<","value":1},{"field":"pe","op":"<","value":20}],"expect":{"filters":[{"field":"pe","op":"<","value":20}],"filterCount":1},"reject":[{"field":"beta"}]},
+    {"query":"Also add P/E above 10","mode":"refine","previous":[{"field":"pe","op":"<","value":20}],"expect":{"filters":[{"field":"pe","op":"<","value":20},{"field":"pe","op":">","value":10}],"filterCount":2}},
+    {"query":"Also require low volatility","mode":"refine","previous":[{"field":"pe","op":"<","value":20}],"expect":{"filters":[{"field":"pe","op":"<","value":20},{"field":"beta","op":"<","value":1}],"filterCount":2},"requireAssumptions":true},
+    {"query":"Also require large caps","mode":"refine","previous":[{"field":"pe","op":"<","value":20}],"expect":{"filters":[{"field":"pe","op":"<","value":20},{"field":"marketCap","op":">","value":50}],"filterCount":2}},
+    {"query":"Also require positive revenue growth","mode":"refine","previous":[{"field":"pe","op":"<","value":20}],"expect":{"filters":[{"field":"pe","op":"<","value":20},{"field":"revGrowth","op":">","value":0}],"filterCount":2}},
+    {"query":"Exclude Utilities","mode":"refine","previous":[{"field":"pe","op":"<","value":20},{"field":"sector","op":"==","value":"Technology"}],"expect":{"filters":[{"field":"pe","op":"<","value":20},{"field":"sector","op":"==","value":"Technology"},{"field":"sector","op":"!=","value":"Utilities"}],"filterCount":3}},
+    {"query":"Remove revenue growth","mode":"refine","previous":[{"field":"pe","op":"<","value":20},{"field":"revGrowth","op":">","value":10}],"expect":{"filters":[{"field":"pe","op":"<","value":20}],"filterCount":1},"reject":[{"field":"revGrowth"}]},
+    {"query":"Change revenue growth to above 20%","mode":"refine","previous":[{"field":"pe","op":"<","value":20},{"field":"revGrowth","op":">","value":10}],"expect":{"filters":[{"field":"pe","op":"<","value":20},{"field":"revGrowth","op":">","value":20}],"filterCount":2}},
+    {"query":"Use beta between 0.5 and 1.2 instead","mode":"refine","previous":[{"field":"beta","op":"<","value":2},{"field":"pe","op":"<","value":20}],"expect":{"filters":[{"field":"beta","op":">=","value":0.5},{"field":"beta","op":"<=","value":1.2},{"field":"pe","op":"<","value":20}],"filterCount":3}},
+    {"query":"Rank by highest yield","mode":"refine","previous":[{"field":"pe","op":"<","value":20}],"expect":{"filters":[{"field":"pe","op":"<","value":20}],"ranking":"dividend","filterCount":1}},
+    {"query":"Add P/E under 20","mode":"refine","previous":[],"expect":{"filters":[{"field":"pe","op":"<","value":20}],"filterCount":1}}
   ]
 }
