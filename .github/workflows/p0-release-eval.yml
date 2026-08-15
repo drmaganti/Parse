@@ -1,0 +1,22 @@
+name: P0.1 Release Gate
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  production-parser-eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Evaluate deployed production parser
+        env:
+          EVAL_BASE_URL: https://getparse.app
+          MODEL_RUNS: 1
+          MODEL_MIN_PASS_RATE: 0.95
+        run: npm run eval:live
