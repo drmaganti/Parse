@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { FIELDS, type Filter, type StockRow } from "../../lib/fields";
 import { runScreen, type ScreenResult } from "../../lib/screen";
@@ -21,6 +21,7 @@ export default function TryPage() {
   const [filters, setFilters] = useState<Filter[]>([]);
   const [results, setResults] = useState<ScreenResult[]>([]);
   const [ranking, setRanking] = useState("marketCap");
+  const [sort, setSort] = useState<{ col: keyof StockRow; dir: "asc" | "desc" } | null>(null);
   const [interpretation, setInterpretation] = useState("");
   const [assumptions, setAssumptions] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -50,7 +51,7 @@ export default function TryPage() {
       const nextRanking = body.ranking || "marketCap";
       const nextResults = runScreen(stocks, next, nextRanking, 25);
       setFilters(next); setRanking(nextRanking); setInterpretation(body.interpretation || ""); setAssumptions(body.assumptions || []);
-      setResults(nextResults);
+      setResults(nextResults); setSort(null);
       setRuns((n) => n + 1);
       trackEvent("screen_run_success", { guest_run: runs + 1, filter_count: next.length, result_count: nextResults.length, source: acquisitionSource() });
     } catch (e: any) {
@@ -71,6 +72,32 @@ export default function TryPage() {
     trackEvent("screen_filter_removed", { filter_count: next.length });
   };
 
+  const toggleSort = (col: keyof StockRow) => {
+    setSort((cur) => {
+      const next = !cur || cur.col !== col ? { col, dir: "desc" as const } : cur.dir === "desc" ? { col, dir: "asc" as const } : null;
+      trackEvent("screen_results_sorted", { column: String(col), direction: next?.dir || "ranking", source: acquisitionSource() });
+      return next;
+    });
+  };
+
+  const displayedResults = useMemo(() => {
+    if (!sort) return results;
+    const { col, dir } = sort;
+    const d = dir === "asc" ? 1 : -1;
+    return [...results].sort((a, b) => {
+      const av = a[col] as any;
+      const bv = b[col] as any;
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      const cmp = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv));
+      return cmp * d;
+    });
+  }, [results, sort]);
+
+  const sortArrow = (col: keyof StockRow) => sort?.col === col ? (sort.dir === "asc" ? " ↑" : " ↓") : "";
+  const ariaSort = (col: keyof StockRow): "ascending" | "descending" | "none" => sort?.col === col ? (sort.dir === "asc" ? "ascending" : "descending") : "none";
+
   const shareScreen = async () => {
     if (!query.trim() || typeof window === "undefined") return;
     const shareUrl = new URL("/screens/share", window.location.origin);
@@ -89,6 +116,8 @@ export default function TryPage() {
       if (e?.name !== "AbortError") setShareNote("Could not copy the link.");
     }
   };
+
+  const headerStyle = (align: "left" | "right"): React.CSSProperties => ({ textAlign: align, padding: "8px", borderBottom: `1px solid ${T.border}`, color: T.inkSoft, fontSize: 11.5, cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" });
 
   return <div style={{ minHeight: "100vh", background: T.bg, color: T.ink, fontFamily: "'Inter', system-ui, sans-serif" }}>
     <style>{`.p-btn{height:40px;padding:0 16px;border-radius:10px;border:0;background:${T.accent};color:#fff;font:550 14px Inter,system-ui,sans-serif;cursor:pointer}.p-btn:disabled{opacity:.6}.p-btn-neutral{height:36px;padding:0 13px;border-radius:9px;border:1px solid ${T.border};background:#fff;color:${T.ink};font:550 13.5px Inter,system-ui,sans-serif;cursor:pointer}.p-link{color:${T.accent};text-decoration:none;font-size:14px}.p-query{width:100%;box-sizing:border-box;border:1px solid #D4D8DF;border-radius:13px;background:#fff;padding:14px 15px;font:15.5px Inter,system-ui,sans-serif;resize:vertical;min-height:56px}.p-query:focus{outline:none;border-color:${T.accent};box-shadow:0 0 0 3px ${T.accentSoft}}`}</style>
@@ -113,8 +142,15 @@ export default function TryPage() {
       </section>}
 
       {results.length > 0 && <section style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: 18, marginTop: 16 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}><div style={{ fontFamily: DISP, fontSize: 18, fontWeight: 600 }}>{results.length} matches</div><div style={{ display: "flex", gap: 9, alignItems: "center" }}><button className="p-btn-neutral" onClick={shareScreen}>Share screen</button>{shareNote && <span style={{ color: T.inkSoft, fontSize: 12.5 }}>{shareNote}</span>}</div></div>
-        <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", minWidth: 620 }}><thead><tr>{["Symbol","Company","Price","Market cap","P/E","1W change"].map((h) => <th key={h} style={{ textAlign: h === "Symbol" || h === "Company" ? "left" : "right", padding: "8px", borderBottom: `1px solid ${T.border}`, color: T.inkSoft, fontSize: 11.5 }}>{h}</th>)}</tr></thead><tbody>{results.map((r) => <tr key={r.symbol}><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, fontFamily: MONO, fontSize: 13 }}>{r.symbol}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, fontSize: 13 }}>{r.name}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.price == null ? "—" : `$${Number(r.price).toFixed(2)}`}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.market_cap == null ? "—" : `$${Number(r.market_cap).toFixed(1)}B`}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.pe == null ? "—" : Number(r.pe).toFixed(1)}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.chg_1w == null ? "—" : `${Number(r.chg_1w).toFixed(1)}%`}</td></tr>)}</tbody></table></div>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}><div style={{ fontFamily: DISP, fontSize: 18, fontWeight: 600 }}>{results.length} matches{sort ? ` · sorted ${sort.dir === "asc" ? "ascending" : "descending"}` : ""}</div><div style={{ display: "flex", gap: 9, alignItems: "center" }}><button className="p-btn-neutral" onClick={shareScreen}>Share screen</button>{shareNote && <span style={{ color: T.inkSoft, fontSize: 12.5 }}>{shareNote}</span>}</div></div>
+        <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", minWidth: 620 }}><thead><tr>
+          <th aria-sort={ariaSort("symbol")} onClick={() => toggleSort("symbol")} title="Sort by symbol" style={headerStyle("left")}>Symbol{sortArrow("symbol")}</th>
+          <th aria-sort={ariaSort("name")} onClick={() => toggleSort("name")} title="Sort by company" style={headerStyle("left")}>Company{sortArrow("name")}</th>
+          <th aria-sort={ariaSort("price")} onClick={() => toggleSort("price")} title="Sort by price" style={headerStyle("right")}>Price{sortArrow("price")}</th>
+          <th aria-sort={ariaSort("market_cap")} onClick={() => toggleSort("market_cap")} title="Sort by market cap" style={headerStyle("right")}>Market cap{sortArrow("market_cap")}</th>
+          <th aria-sort={ariaSort("pe")} onClick={() => toggleSort("pe")} title="Sort by P/E" style={headerStyle("right")}>P/E{sortArrow("pe")}</th>
+          <th aria-sort={ariaSort("chg_1w")} onClick={() => toggleSort("chg_1w")} title="Sort by 1-week change" style={headerStyle("right")}>1W change{sortArrow("chg_1w")}</th>
+        </tr></thead><tbody>{displayedResults.map((r) => <tr key={r.symbol}><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, fontFamily: MONO, fontSize: 13 }}>{r.symbol}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, fontSize: 13 }}>{r.name}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.price == null ? "—" : `$${Number(r.price).toFixed(2)}`}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.market_cap == null ? "—" : `$${Number(r.market_cap).toFixed(1)}B`}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.pe == null ? "—" : Number(r.pe).toFixed(1)}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.chg_1w == null ? "—" : `${Number(r.chg_1w).toFixed(1)}%`}</td></tr>)}</tbody></table></div>
         <div style={{ marginTop: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}><span style={{ color: T.inkSoft, fontSize: 13.5 }}>Research tool only; these are screen matches, not investment recommendations.</span><a href="/account?mode=signup" className="p-link">Create account to save →</a></div>
       </section>}
 
