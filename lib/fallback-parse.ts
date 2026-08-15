@@ -85,7 +85,10 @@ function parseFresh(query: string): ParsedScreen {
   const out: Filter[] = [];
   const assumptions: string[] = [];
   let ranking = "marketCap";
-  const cmp = "under|below|less than|lower than|at most|no more than|maximum|max|<=|<|over|above|greater than|more than|at least|minimum|min|>=|>";
+  const cmp = "no more than|at most|less than|lower than|under|below|maximum|max|<=|<|at least|minimum|min|more than|greater than|over|above|>=|>";
+  const unsupportedMetric = hasKnownUnsupportedMetric(q);
+  if (unsupportedMetric) assumptions.push("One or more requested metrics are not supported yet; unsupported criteria were left out.");
+  if (/\bquality (?:companies|stocks|names)\b/.test(q)) assumptions.push("Parse does not have a standalone quality metric yet, so no quality filter was added.");
 
   addRange(out, "pe", q.match(/(?:\bp\/?e\b|price.?to.?earnings)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
   addRange(out, "pb", q.match(/(?:\bp\/?b\b|price.?to.?book)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
@@ -96,14 +99,14 @@ function parseFresh(query: string): ParsedScreen {
   addRange(out, "divYield", q.match(/(?:dividend yield|yield(?:ing)?)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
   addRange(out, "rsi", q.match(/\brsi\b[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
 
-  if (!out.some((f) => f.field === "pe")) addThreshold(out, "pe", q.match(new RegExp(`(?:\\bp\\/?e\\b|price.?to.?earnings)[^\\d-]*(${cmp})\\s*\\$?(-?\\d+(?:\\.\\d+)?)`)));
-  if (!out.some((f) => f.field === "pb")) addThreshold(out, "pb", q.match(new RegExp(`(?:\\bp\\/?b\\b|price.?to.?book)[^\\d-]*(${cmp})\\s*\\$?(-?\\d+(?:\\.\\d+)?)`)));
-  if (!out.some((f) => f.field === "ps")) addThreshold(out, "ps", q.match(new RegExp(`(?:\\bp\\/?s\\b|price.?to.?sales)[^\\d-]*(${cmp})\\s*\\$?(-?\\d+(?:\\.\\d+)?)`)));
+  if (!out.some((f) => f.field === "pe")) addThreshold(out, "pe", q.match(new RegExp(`(?:\\bp\\/?e\\b|price.?to.?earnings)[^\\d-]*?(${cmp})\\s*\\$?(-?\\d+(?:\\.\\d+)?)`)));
+  if (!out.some((f) => f.field === "pb")) addThreshold(out, "pb", q.match(new RegExp(`(?:\\bp\\/?b\\b|price.?to.?book)[^\\d-]*?(${cmp})\\s*\\$?(-?\\d+(?:\\.\\d+)?)`)));
+  if (!out.some((f) => f.field === "ps")) addThreshold(out, "ps", q.match(new RegExp(`(?:\\bp\\/?s\\b|price.?to.?sales)[^\\d-]*?(${cmp})\\s*\\$?(-?\\d+(?:\\.\\d+)?)`)));
   if (!out.some((f) => f.field === "divYield")) addThreshold(out, "divYield", q.match(new RegExp(`(?:dividend yield|yield(?:ing)?)\\s*(?:(${cmp})\\s*)?(-?\\d+(?:\\.\\d+)?)`)));
-  if (!out.some((f) => f.field === "beta")) addThreshold(out, "beta", q.match(new RegExp(`\\bbeta\\b[^\\d-]*(${cmp})\\s*(-?\\d+(?:\\.\\d+)?)`)));
-  if (!out.some((f) => f.field === "marketCap")) addThreshold(out, "marketCap", q.match(new RegExp(`market\\s*cap[^\\d-]*(${cmp})\\s*\\$?(-?\\d+(?:\\.\\d+)?)`)));
-  if (!out.some((f) => f.field === "revGrowth")) addThreshold(out, "revGrowth", q.match(new RegExp(`(?:revenue growth|growing revenue|grow(?:ing)? revenue)[^\\d-]*(${cmp})\\s*(-?\\d+(?:\\.\\d+)?)`)));
-  if (!out.some((f) => f.field === "rsi")) addThreshold(out, "rsi", q.match(new RegExp(`\\brsi\\b[^\\d-]*(${cmp})\\s*(-?\\d+(?:\\.\\d+)?)`)));
+  if (!out.some((f) => f.field === "beta")) addThreshold(out, "beta", q.match(new RegExp(`\\bbeta\\b[^\\d-]*?(${cmp})\\s*(-?\\d+(?:\\.\\d+)?)`)));
+  if (!out.some((f) => f.field === "marketCap")) addThreshold(out, "marketCap", q.match(new RegExp(`market\\s*cap[^\\d-]*?(${cmp})\\s*\\$?(-?\\d+(?:\\.\\d+)?)`)));
+  if (!out.some((f) => f.field === "revGrowth")) addThreshold(out, "revGrowth", q.match(new RegExp(`(?:revenue growth|growing revenue|grow(?:ing)? revenue)[^\\d-]*?(${cmp})\\s*(-?\\d+(?:\\.\\d+)?)`)));
+  if (!out.some((f) => f.field === "rsi")) addThreshold(out, "rsi", q.match(new RegExp(`\\brsi\\b[^\\d-]*?(${cmp})\\s*(-?\\d+(?:\\.\\d+)?)`)));
 
   const positiveGrowth = /positive revenue growth|revenue (?:is )?growing|still growing revenue/.test(q);
   if (positiveGrowth && !out.some((f) => f.field === "revGrowth")) addUnique(out, mk("revGrowth", ">", 0));
@@ -128,7 +131,7 @@ function parseFresh(query: string): ParsedScreen {
     ranking = "dividend";
   }
   const genericGrowth = /\bgrowth (?:stocks|companies|names)\b|\bgrowing (?:technology|tech|healthcare|financial|consumer|industrial|companies|stocks|names)\b|fast-growing|highest growth|growth at a reasonable price|\bgarp\b/.test(q);
-  if (!hasKnownUnsupportedMetric(q) && (genericGrowth || /revenue growth|growing revenue/.test(q))) {
+  if (!unsupportedMetric && (genericGrowth || /revenue growth|growing revenue/.test(q))) {
     if (!out.some((f) => f.field === "revGrowth") && !/highest growth/.test(q)) addUnique(out, mk("revGrowth", ">", 15));
     ranking = "quality";
   }
@@ -226,7 +229,6 @@ export function tryRuleParse(
   mode: "new" | "refine" = prev.length ? "refine" : "new"
 ): ParsedScreen | null {
   const q = ` ${query.toLowerCase()} `;
-  if (hasKnownUnsupportedMetric(q)) return null;
   const result = fallbackParse(query, mode === "refine" ? prev : [], [], currentRanking, mode === "refine");
   if (mode === "refine") {
     const rankingChanged = hasRankingIntent(q) && result.ranking !== currentRanking;

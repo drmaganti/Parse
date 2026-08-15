@@ -16,7 +16,7 @@ function load(name: string): EvalCase[] {
 }
 
 async function run() {
-  const allCases = [...load("cases.json"), ...load("adversarial-cases.json")];
+  const allCases = [...load("cases.json"), ...load("adversarial-cases.json"), ...load("release-regressions.json")];
   const cases = OFFLINE ? allCases.filter((c) => !c.modelOnly) : allCases;
   const provider = OFFLINE ? "rules (offline)" : (process.env.LLM_PROVIDER ?? "groq");
   const repeats = OFFLINE ? 1 : MODEL_RUNS;
