@@ -1,86 +1,77 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { parseQuery, type ParseMode } from "../lib/parse";
+import { parseQuery } from "../lib/parse";
 import { fallbackParse } from "../lib/fallback-parse";
-import type { Filter, Op } from "../lib/fields";
+import { evaluateCase, hydrate, type EvalCase } from "./harness";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const OFFLINE = process.env.OFFLINE === "1";
+const MODEL_RUNS = Math.max(1, Number(process.env.MODEL_RUNS || 1));
+const MODEL_MIN_PASS_RATE = Number(process.env.MODEL_MIN_PASS_RATE || 0.95);
 
-interface ExpectedFilter { field: string; op: string; value: number | string; }
-interface RawFilter extends ExpectedFilter { source?: Filter["source"]; }
-interface Case {
-  query: string;
-  mode?: ParseMode;
-  previous?: RawFilter[];
-  currentRanking?: string;
-  expect: { filters?: ExpectedFilter[]; ranking?: string; filterCount?: number };
-  reject?: { field: string; op?: string; value?: number | string }[];
-  requireAssumptions?: boolean;
-  modelOnly?: boolean;
-}
-
-function hydrate(raw: RawFilter[] = []): Filter[] {
-  return raw.map((f, i) => ({ id: `eval_${i}_${f.field}`, field: f.field, op: f.op as Op, value: f.value, source: f.source ?? "ai" }));
-}
-
-function matchFilter(exp: ExpectedFilter, got: Filter[]): boolean {
-  return got.some((g) => {
-    if (g.field !== exp.field || g.op !== exp.op) return false;
-    if (typeof exp.value === "number") return Number(g.value) === exp.value || withinReason(exp.op, exp.value, Number(g.value));
-    return String(g.value).toLowerCase() === String(exp.value).toLowerCase();
-  });
-}
-
-function withinReason(op: string, expVal: number, got: number): boolean {
-  if (!Number.isFinite(got)) return false;
-  const band = Math.max(Math.abs(expVal) * 0.15, 1);
-  if (op === ">" || op === ">=") return got >= expVal - band && got <= expVal + band;
-  if (op === "<" || op === "<=") return got >= expVal - band && got <= expVal + band;
-  return Math.abs(got - expVal) <= band;
-}
-
-function rejected(rule: { field: string; op?: string; value?: number | string }, got: Filter[]): boolean {
-  return got.some((g) => g.field === rule.field && (!rule.op || g.op === rule.op) && (rule.value === undefined || String(g.value).toLowerCase() === String(rule.value).toLowerCase()));
+function load(name: string): EvalCase[] {
+  const raw = JSON.parse(readFileSync(join(__dir, name), "utf8"));
+  return raw.cases || [];
 }
 
 async function run() {
-  const raw = JSON.parse(readFileSync(join(__dir, "cases.json"), "utf8"));
-  const allCases: Case[] = raw.cases;
+  const allCases = [...load("cases.json"), ...load("adversarial-cases.json")];
   const cases = OFFLINE ? allCases.filter((c) => !c.modelOnly) : allCases;
   const provider = OFFLINE ? "fallback (offline)" : (process.env.LLM_PROVIDER ?? "groq");
-  console.log(`\nParse eval · ${cases.length}/${allCases.length} cases · ${provider}\n`);
+  const repeats = OFFLINE ? 1 : MODEL_RUNS;
+  const report: any = { provider, offline: OFFLINE, repeats, cases: cases.length, runs: [] };
 
-  let pass = 0;
-  for (const c of cases) {
-    const previous = hydrate(c.previous);
-    const ranking = c.currentRanking ?? "marketCap";
-    const mode = c.mode ?? (previous.length ? "refine" : "new");
-    const r = OFFLINE
-      ? fallbackParse(c.query, mode === "refine" ? previous : [], [], ranking)
-      : await parseQuery(c.query, mode === "refine" ? previous : [], [], ranking, mode);
-    const reasons: string[] = [];
+  console.log(`\nParse eval · ${cases.length}/${allCases.length} cases · ${provider} · ${repeats} run(s)\n`);
 
-    for (const ef of c.expect.filters ?? []) if (!matchFilter(ef, r.filters)) reasons.push(`missing ${ef.field}${ef.op}${ef.value}`);
-    for (const reject of c.reject ?? []) if (rejected(reject, r.filters)) reasons.push(`unexpected ${reject.field}${reject.op ?? ""}${reject.value ?? ""}`);
-    if (c.expect.filterCount !== undefined && r.filters.length !== c.expect.filterCount) reasons.push(`filter count ${r.filters.length}≠${c.expect.filterCount}`);
-    if (c.expect.ranking && r.ranking !== c.expect.ranking) reasons.push(`ranking ${r.ranking}≠${c.expect.ranking}`);
-    if (c.requireAssumptions && r.assumptions.length === 0) reasons.push("no assumption recorded");
+  let overallPasses = 0;
+  let overallAttempts = 0;
+  let criticalFailures = 0;
+  let fallbackCount = 0;
 
-    const ok = reasons.length === 0;
-    if (ok) pass++;
-    const chips = r.filters.map((f) => `${f.field}${f.op}${f.value}`).join(" ");
-    console.log(`${ok ? "PASS" : "FAIL"}  ${c.query}`);
-    console.log(`      → [${chips}] rank=${r.ranking}${(r as any).source ? " src=" + (r as any).source : ""}`);
-    if (!ok) console.log(`      ✗ ${reasons.join("; ")}`);
+  for (let runIndex = 0; runIndex < repeats; runIndex++) {
+    let pass = 0;
+    const runRows: any[] = [];
+    console.log(repeats > 1 ? `--- model run ${runIndex + 1}/${repeats} ---` : "");
+
+    for (const c of cases) {
+      const previous = hydrate(c.previous);
+      const ranking = c.currentRanking ?? "marketCap";
+      const mode = c.mode ?? (previous.length ? "refine" : "new");
+      const result = OFFLINE
+        ? { ...fallbackParse(c.query, mode === "refine" ? previous : [], [], ranking, mode === "refine"), source: "fallback" as const }
+        : await parseQuery(c.query, mode === "refine" ? previous : [], [], ranking, mode);
+
+      if (!OFFLINE && result.source === "fallback") fallbackCount++;
+      const verdict = evaluateCase(c, result, !OFFLINE);
+      if (verdict.ok) pass++;
+      else if (c.critical) criticalFailures++;
+
+      overallAttempts++;
+      if (verdict.ok) overallPasses++;
+      runRows.push({ query: c.query, ok: verdict.ok, critical: !!c.critical, source: result.source, reasons: verdict.reasons, filters: result.filters, ranking: result.ranking, assumptions: result.assumptions });
+
+      console.log(`${verdict.ok ? "PASS" : "FAIL"}${c.critical ? "*" : " "} ${c.query}`);
+      console.log(`      → [${verdict.chips}] rank=${result.ranking} src=${result.source}`);
+      if (!verdict.ok) console.log(`      ✗ ${verdict.reasons.join("; ")}`);
+    }
+
+    const pct = cases.length ? pass / cases.length : 0;
+    console.log(`\nrun ${runIndex + 1}: ${pass}/${cases.length} passed (${(pct * 100).toFixed(1)}%)\n`);
+    report.runs.push({ run: runIndex + 1, passed: pass, total: cases.length, passRate: pct, rows: runRows });
   }
 
-  const pct = cases.length ? ((pass / cases.length) * 100).toFixed(0) : "0";
-  console.log(`\n${pass}/${cases.length} passed (${pct}%)\n`);
+  const passRate = overallAttempts ? overallPasses / overallAttempts : 0;
+  report.summary = { passed: overallPasses, attempts: overallAttempts, passRate, criticalFailures, fallbackCount };
+  if (process.env.EVAL_REPORT) writeFileSync(process.env.EVAL_REPORT, JSON.stringify(report, null, 2));
+
+  console.log(`overall: ${overallPasses}/${overallAttempts} passed (${(passRate * 100).toFixed(1)}%)`);
+  if (!OFFLINE) console.log(`model fallbacks: ${fallbackCount}; critical failures: ${criticalFailures}; threshold: ${(MODEL_MIN_PASS_RATE * 100).toFixed(0)}%`);
+  console.log("");
+
   if (OFFLINE) {
-    if (pass !== cases.length) process.exitCode = 1;
-  } else if (cases.length && pass / cases.length < 0.9) {
+    if (overallPasses !== overallAttempts) process.exitCode = 1;
+  } else if (passRate < MODEL_MIN_PASS_RATE || criticalFailures > 0 || fallbackCount > 0) {
     process.exitCode = 1;
   }
 }
