@@ -1,4 +1,4 @@
-import { FIELDS, RANKINGS, SECTORS, type Filter, type Op } from "./fields";
+import { RANKINGS, SECTORS, type Filter, type Op } from "./fields";
 import { applyRefinement, sameFilter, type RefinementAction } from "./filter-ops";
 
 export interface ParsedScreen {
@@ -19,25 +19,27 @@ function addUnique(out: Filter[], f: Filter) {
   if (!out.some((x) => sameFilter(x, f))) out.push(f);
 }
 
-function metricRange(q: string, label: RegExp, field: string, out: Filter[]) {
-  const between = q.match(new RegExp(`${label.source}[^\\d-]*between\\s*(-?\\d+(?:\\.\\d+)?)\\s*(?:and|to)\\s*(-?\\d+(?:\\.\\d+)?)`, "i"));
-  if (!between) return false;
-  const a = Number(between[1]);
-  const b = Number(between[2]);
-  addUnique(out, mk(field, ">=", Math.min(a, b)));
-  addUnique(out, mk(field, "<=", Math.max(a, b)));
+function opFor(word: string): Op {
+  const w = word.toLowerCase();
+  if (w === "at most" || w === "<=") return "<=";
+  if (w === "at least" || w === ">=") return ">=";
+  if (/under|below|less than|lower than|</.test(w)) return "<";
+  return ">";
+}
+
+function addThreshold(out: Filter[], field: string, match: RegExpMatchArray | null) {
+  if (!match) return false;
+  addUnique(out, mk(field, opFor(match[1]), Number(match[2])));
   return true;
 }
 
-function threshold(q: string, label: RegExp, field: string, out: Filter[]) {
-  if (metricRange(q, label, field, out)) return;
-  const rx = new RegExp(`${label.source}[^\\d-]*(under|below|less than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\\s*\\$?\\s*(-?\\d+(?:\\.\\d+)?)`, "i");
-  const m = q.match(rx);
-  if (!m) return;
-  const word = m[1].toLowerCase();
-  const value = Number(m[2]);
-  const op: Op = word === "at most" || word === "<=" ? "<=" : word === "at least" || word === ">=" ? ">=" : /under|below|less than|</.test(word) ? "<" : ">";
-  addUnique(out, mk(field, op, value));
+function addRange(out: Filter[], field: string, match: RegExpMatchArray | null) {
+  if (!match) return false;
+  const a = Number(match[1]);
+  const b = Number(match[2]);
+  addUnique(out, mk(field, ">=", Math.min(a, b)));
+  addUnique(out, mk(field, "<=", Math.max(a, b)));
+  return true;
 }
 
 function fieldMention(q: string): string | null {
@@ -45,12 +47,12 @@ function fieldMention(q: string): string | null {
     ["pe", /\bp\/?e\b|price.?to.?earnings/],
     ["pb", /\bp\/?b\b|price.?to.?book/],
     ["ps", /\bp\/?s\b|price.?to.?sales/],
-    ["divYield", /dividend yield|\byield\b/],
+    ["divYield", /dividend yield|yield(?:ing)?/],
     ["beta", /\bbeta\b|volatility/],
-    ["marketCap", /market\s*cap|large[- ]?cap|small[- ]?cap|mega[- ]?cap/],
+    ["marketCap", /market\s*cap|large[- ]?cap|small[- ]?cap|mega[- ]?cap|company size/],
     ["revGrowth", /revenue growth|growing revenue|growth/],
     ["rsi", /\brsi\b|oversold/],
-    ["from52wHigh", /52[- ]?week high|off (?:the )?high|below (?:their )?high/],
+    ["from52wHigh", /52[- ]?week high|off (?:the )?high|below (?:their )?high|near (?:the )?high/],
     ["chg1w", /one[- ]?week|1w|this week|weekly/],
     ["sector", /sector|technology|tech|financials|healthcare|consumer|energy|industrials|communications|utilities|materials|real estate/],
   ];
@@ -63,16 +65,38 @@ function parseFresh(query: string): ParsedScreen {
   const assumptions: string[] = [];
   let ranking = "marketCap";
 
-  threshold(q, /p\/?e|price.?to.?earnings/, "pe", out);
-  threshold(q, /p\/?b|price.?to.?book/, "pb", out);
-  threshold(q, /p\/?s|price.?to.?sales/, "ps", out);
-  threshold(q, /dividend yield|yield/, "divYield", out);
-  threshold(q, /beta/, "beta", out);
-  threshold(q, /market\s*cap|cap/, "marketCap", out);
-  threshold(q, /revenue growth|growth/, "revGrowth", out);
-  threshold(q, /rsi/, "rsi", out);
-  threshold(q, /(?:percent|%)?\s*(?:off|below)\s*(?:the\s*)?52[- ]?week high|52[- ]?week high/, "from52wHigh", out);
-  threshold(q, /1w change|one[- ]?week change|weekly change/, "chg1w", out);
+  addRange(out, "pe", q.match(/(?:p\/?e|price.?to.?earnings)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
+  addRange(out, "pb", q.match(/(?:p\/?b|price.?to.?book)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
+  addRange(out, "ps", q.match(/(?:p\/?s|price.?to.?sales)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
+  addRange(out, "beta", q.match(/beta[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
+  addRange(out, "marketCap", q.match(/market\s*cap[^\d-]*between\s*\$?(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*\$?(-?\d+(?:\.\d+)?)/));
+  addRange(out, "revGrowth", q.match(/(?:revenue growth|growth)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
+  addRange(out, "divYield", q.match(/(?:dividend yield|yield(?:ing)?)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
+  addRange(out, "rsi", q.match(/rsi[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
+
+  if (!out.some((f) => f.field === "pe")) addThreshold(out, "pe", q.match(/(?:p\/?e|price.?to.?earnings)[^\d-]*(under|below|less than|lower than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*\$?(-?\d+(?:\.\d+)?)/));
+  if (!out.some((f) => f.field === "pb")) addThreshold(out, "pb", q.match(/(?:p\/?b|price.?to.?book)[^\d-]*(under|below|less than|lower than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*\$?(-?\d+(?:\.\d+)?)/));
+  if (!out.some((f) => f.field === "ps")) addThreshold(out, "ps", q.match(/(?:p\/?s|price.?to.?sales)[^\d-]*(under|below|less than|lower than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*\$?(-?\d+(?:\.\d+)?)/));
+  if (!out.some((f) => f.field === "divYield")) addThreshold(out, "divYield", q.match(/(?:dividend yield|yield(?:ing)?)[^\d-]*(under|below|less than|at most|<=|<|over|above|greater than|more than|at least|>=|>)?\s*(-?\d+(?:\.\d+)?)/));
+  if (!out.some((f) => f.field === "beta")) addThreshold(out, "beta", q.match(/beta[^\d-]*(under|below|less than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*(-?\d+(?:\.\d+)?)/));
+  if (!out.some((f) => f.field === "marketCap")) addThreshold(out, "marketCap", q.match(/market\s*cap[^\d-]*(under|below|less than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*\$?(-?\d+(?:\.\d+)?)/));
+  if (!out.some((f) => f.field === "revGrowth")) {
+    addThreshold(out, "revGrowth", q.match(/(?:revenue growth|growing revenue|grow(?:ing)? revenue|growth)[^\d-]*(under|below|less than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*(-?\d+(?:\.\d+)?)/));
+  }
+  if (!out.some((f) => f.field === "rsi")) addThreshold(out, "rsi", q.match(/rsi[^\d-]*(under|below|less than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*(-?\d+(?:\.\d+)?)/));
+
+  const positiveGrowth = /positive revenue growth|revenue (?:is )?growing|still growing revenue/.test(q);
+  if (positiveGrowth && !out.some((f) => f.field === "revGrowth")) addUnique(out, mk("revGrowth", ">", 0));
+
+  const offHigh = q.match(/(?:more than|over|at least)\s*(\d+(?:\.\d+)?)\s*%?\s*(?:off|below)\s*(?:their\s*|the\s*)?(?:52[- ]?week )?high/);
+  if (offHigh) addUnique(out, mk("from52wHigh", "<", -Number(offHigh[1])));
+  const withinHigh = q.match(/within\s*(\d+(?:\.\d+)?)\s*%?\s*(?:of|from)\s*(?:their\s*|the\s*)?(?:52[- ]?week )?high/);
+  if (withinHigh) addUnique(out, mk("from52wHigh", ">=", -Number(withinHigh[1])));
+
+  const upWeek = q.match(/(?:up|gained|rising)\s*(?:more than|over|above|at least)?\s*(\d+(?:\.\d+)?)\s*%?\s*(?:this week|over the last week|in a week)/);
+  if (upWeek) addUnique(out, mk("chg1w", ">", Number(upWeek[1])));
+  const downWeek = q.match(/(?:down|fallen|fell|dropped)\s*(?:more than|over|by at least|at least)?\s*(\d+(?:\.\d+)?)\s*%?\s*(?:this week|over the last week|in a week)/);
+  if (downWeek) addUnique(out, mk("chg1w", "<", -Number(downWeek[1])));
 
   if (/cheap|value|undervalued|low p\/?e/.test(q)) {
     if (!out.some((f) => f.field === "pe")) addUnique(out, mk("pe", "<", 20));
@@ -87,11 +111,11 @@ function parseFresh(query: string): ParsedScreen {
     if (!out.some((f) => f.field === "revGrowth") && !/highest growth/.test(q)) addUnique(out, mk("revGrowth", ">", 15));
     ranking = "quality";
   }
-  if (/momentum|near (?:their )?(?:52|high)|breakout|strongest momentum/.test(q)) {
+  if (/momentum|near (?:their )?(?:52[- ]?week )?high|breakout|strongest momentum/.test(q)) {
     if (!out.some((f) => f.field === "from52wHigh")) addUnique(out, mk("from52wHigh", ">", -6));
     ranking = "momentum";
   }
-  if (/fallen|beaten|beaten-down|dropped|decline|sell-?off|slump|most beaten/.test(q)) {
+  if (/beaten|beaten-down|sell-?off|slump|most beaten|biggest decline/.test(q)) {
     if (!out.some((f) => f.field === "chg1w")) addUnique(out, mk("chg1w", "<", -2));
     ranking = "decline";
   }
@@ -109,8 +133,9 @@ function parseFresh(query: string): ParsedScreen {
     if (!out.some((f) => f.field === "beta")) addUnique(out, mk("beta", "<", 1));
     assumptions.push("Read low-risk language as beta below 1.0");
   }
-  if (/large[- ]?cap|\bbig companies\b|\blarge companies\b/.test(q) && !out.some((f) => f.field === "marketCap")) addUnique(out, mk("marketCap", ">", 50));
+
   if (/mega[- ]?cap|very large companies/.test(q) && !out.some((f) => f.field === "marketCap")) addUnique(out, mk("marketCap", ">", 200));
+  else if (/large[- ]?cap|\bbig companies\b|\blarge companies\b/.test(q) && !out.some((f) => f.field === "marketCap")) addUnique(out, mk("marketCap", ">", 50));
   if (/small[- ]?cap/.test(q) && !out.some((f) => f.field === "marketCap")) addUnique(out, mk("marketCap", "<", 20));
 
   const exclusionLanguage = /exclude|excluding|except|avoid|outside|without/.test(q);
@@ -135,9 +160,15 @@ function parseFresh(query: string): ParsedScreen {
   };
 }
 
-export function fallbackParse(query: string, prev: Filter[] = [], _lockedIds: string[] = [], currentRanking = "marketCap"): ParsedScreen {
+export function fallbackParse(
+  query: string,
+  prev: Filter[] = [],
+  _lockedIds: string[] = [],
+  currentRanking = "marketCap",
+  forceRefine = false
+): ParsedScreen {
   const fresh = parseFresh(query);
-  if (!prev.length) {
+  if (!forceRefine && !prev.length) {
     if (!fresh.filters.length) fresh.filters = [mk("marketCap", ">", 50)];
     return fresh;
   }
@@ -151,14 +182,17 @@ export function fallbackParse(query: string, prev: Filter[] = [], _lockedIds: st
     const field = fieldMention(q);
     if (field) actions.push({ type: "remove", field });
   } else {
+    const firstByField = new Set<string>();
     for (const f of fresh.filters) {
       const sameFieldExists = prev.some((p) => p.field === f.field);
-      actions.push({ type: explicitReplace && sameFieldExists ? "replace" : "add", field: f.field, op: f.op, value: f.value });
+      const shouldReplace = explicitReplace && sameFieldExists && !firstByField.has(f.field);
+      actions.push({ type: shouldReplace ? "replace" : "add", field: f.field, op: f.op, value: f.value });
+      firstByField.add(f.field);
     }
   }
 
   const filters = applyRefinement(prev, actions, "ai");
-  const rankingMentioned = /cheapest|highest yield|highest growth|momentum|beaten|decline|largest first|rank by/.test(q);
+  const rankingMentioned = /cheapest|highest yield|highest growth|momentum|most beaten|biggest decline|largest first|rank by/.test(q);
   return {
     filters,
     ranking: rankingMentioned ? fresh.ranking : currentRanking,
