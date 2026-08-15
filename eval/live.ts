@@ -31,7 +31,7 @@ async function parseRemote(c: EvalCase) {
 }
 
 async function main() {
-  const cases = [...load("cases.json"), ...load("adversarial-cases.json")];
+  const cases = [...load("cases.json"), ...load("adversarial-cases.json"), ...load("release-regressions.json")];
   let attempts = 0;
   let passes = 0;
   let criticalFailures = 0;
