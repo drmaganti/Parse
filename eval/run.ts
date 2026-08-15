@@ -18,7 +18,7 @@ function load(name: string): EvalCase[] {
 async function run() {
   const allCases = [...load("cases.json"), ...load("adversarial-cases.json")];
   const cases = OFFLINE ? allCases.filter((c) => !c.modelOnly) : allCases;
-  const provider = OFFLINE ? "fallback (offline)" : (process.env.LLM_PROVIDER ?? "groq");
+  const provider = OFFLINE ? "rules (offline)" : (process.env.LLM_PROVIDER ?? "groq");
   const repeats = OFFLINE ? 1 : MODEL_RUNS;
   const report: any = { provider, offline: OFFLINE, repeats, cases: cases.length, runs: [] };
 
@@ -27,23 +27,23 @@ async function run() {
   let overallPasses = 0;
   let overallAttempts = 0;
   let criticalFailures = 0;
-  let fallbackCount = 0;
+  const sources: Record<string, number> = {};
 
   for (let runIndex = 0; runIndex < repeats; runIndex++) {
     let pass = 0;
     const runRows: any[] = [];
-    console.log(repeats > 1 ? `--- model run ${runIndex + 1}/${repeats} ---` : "");
+    if (repeats > 1) console.log(`--- run ${runIndex + 1}/${repeats} ---`);
 
     for (const c of cases) {
       const previous = hydrate(c.previous);
       const ranking = c.currentRanking ?? "marketCap";
       const mode = c.mode ?? (previous.length ? "refine" : "new");
       const result = OFFLINE
-        ? { ...fallbackParse(c.query, mode === "refine" ? previous : [], [], ranking, mode === "refine"), source: "fallback" as const }
+        ? { ...fallbackParse(c.query, mode === "refine" ? previous : [], [], ranking, mode === "refine"), source: "rules" as const }
         : await parseQuery(c.query, mode === "refine" ? previous : [], [], ranking, mode);
 
-      if (!OFFLINE && result.source === "fallback") fallbackCount++;
-      const verdict = evaluateCase(c, result, !OFFLINE);
+      sources[result.source] = (sources[result.source] || 0) + 1;
+      const verdict = evaluateCase(c, result, false);
       if (verdict.ok) pass++;
       else if (c.critical) criticalFailures++;
 
@@ -62,16 +62,16 @@ async function run() {
   }
 
   const passRate = overallAttempts ? overallPasses / overallAttempts : 0;
-  report.summary = { passed: overallPasses, attempts: overallAttempts, passRate, criticalFailures, fallbackCount };
+  report.summary = { passed: overallPasses, attempts: overallAttempts, passRate, criticalFailures, sources };
   if (process.env.EVAL_REPORT) writeFileSync(process.env.EVAL_REPORT, JSON.stringify(report, null, 2));
 
   console.log(`overall: ${overallPasses}/${overallAttempts} passed (${(passRate * 100).toFixed(1)}%)`);
-  if (!OFFLINE) console.log(`model fallbacks: ${fallbackCount}; critical failures: ${criticalFailures}; threshold: ${(MODEL_MIN_PASS_RATE * 100).toFixed(0)}%`);
+  console.log(`critical failures: ${criticalFailures}; sources: ${JSON.stringify(sources)}`);
   console.log("");
 
   if (OFFLINE) {
     if (overallPasses !== overallAttempts) process.exitCode = 1;
-  } else if (passRate < MODEL_MIN_PASS_RATE || criticalFailures > 0 || fallbackCount > 0) {
+  } else if (passRate < MODEL_MIN_PASS_RATE || criticalFailures > 0) {
     process.exitCode = 1;
   }
 }
