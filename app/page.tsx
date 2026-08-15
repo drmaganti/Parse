@@ -17,6 +17,7 @@ const T = {
 };
 const FONT_DISPLAY = "var(--font-display), 'Instrument Sans', system-ui, sans-serif";
 const FONT_MONO = "var(--font-mono), 'JetBrains Mono', ui-monospace, monospace";
+const DEFAULTS_METADATA_KEY = "parse_screening_defaults";
 
 const EXAMPLES = [
   "Cheap large caps with a P/E under 15",
@@ -27,9 +28,20 @@ const EXAMPLES = [
   "Beaten-down stocks that still have positive revenue growth",
 ];
 
-interface UserState { id: string; email: string; }
+interface UserState { id: string; email: string; metadata: Record<string, any>; }
 interface SavedRow { id: string; name: string; query: string; filters: Filter[]; ranking: string; }
 interface PreferenceRow { id: string; field: string; op: Filter["op"]; value: number | string; }
+
+function readPreferences(metadata: Record<string, any> | undefined): PreferenceRow[] {
+  const raw = metadata?.[DEFAULTS_METADATA_KEY];
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((p: any, i: number) => {
+    if (!p || typeof p.field !== "string" || !FIELDS[p.field]) return [];
+    if (!["<", "<=", ">", ">=", "==", "!="].includes(p.op)) return [];
+    if (p.value === undefined || p.value === null || p.value === "") return [];
+    return [{ id: typeof p.id === "string" ? p.id : `pref_${i}`, field: p.field, op: p.op as Filter["op"], value: p.value as number | string }];
+  });
+}
 
 export default function Page() {
   const [user, setUser] = useState<UserState | null>(null);
@@ -38,12 +50,12 @@ export default function Page() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       const u = data.session?.user;
-      if (u?.email) setUser({ id: u.id, email: u.email });
+      if (u?.email) setUser({ id: u.id, email: u.email, metadata: u.user_metadata ?? {} });
       setBooting(false);
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
       const u = session?.user;
-      setUser(u?.email ? { id: u.id, email: u.email } : null);
+      setUser(u?.email ? { id: u.id, email: u.email, metadata: u.user_metadata ?? {} } : null);
     });
     return () => sub.subscription.unsubscribe();
   }, []);
@@ -96,12 +108,12 @@ function Screener({ user }: { user: UserState }) {
   const [loading, setLoading] = useState(false);
   const [hasRun, setHasRun] = useState(false);
   const [saved, setSaved] = useState<SavedRow[]>([]);
-  const [preferences, setPreferences] = useState<PreferenceRow[]>([]);
-  const [preferencesReady, setPreferencesReady] = useState(false);
+  const [preferences, setPreferences] = useState<PreferenceRow[]>(() => readPreferences(user.metadata));
   const [toast, setToast] = useState("");
   const [dataErr, setDataErr] = useState("");
   const [conflict, setConflict] = useState("");
   const stocksRef = useRef<StockRow[]>([]);
+  const preferencesReady = true;
 
   const flash = (m: string) => { setToast(m); window.setTimeout(() => setToast(""), 2200); };
   useEffect(() => { stocksRef.current = stocks; }, [stocks]);
@@ -116,20 +128,11 @@ function Screener({ user }: { user: UserState }) {
     else window.history.replaceState({}, "", url);
   };
 
-  const applyScreen = useCallback((fs: Filter[], rk: string, note: string, q = screenQuery, push = false) => {
-    const issue = findFilterConflict(fs);
-    setFilters(fs); setRanking(rk); setInterp(note); setConflict(issue || "");
-    setResults(issue ? [] : runScreen(stocksRef.current, fs, rk, Infinity));
-    setHasRun(true); setSort(null); setShowAll(false);
-    if (q) syncUrl(q, fs, rk, push);
-  }, [screenQuery]);
-
   useEffect(() => {
     (async () => {
-      const [{ data: stockData, error: stockError }, { data: sv }, prefResult] = await Promise.all([
+      const [{ data: stockData, error: stockError }, { data: sv }] = await Promise.all([
         supabase.from("stocks").select("*"),
         supabase.from("saved_screens").select("*").order("created_at", { ascending: false }),
-        supabase.from("user_preferences").select("*").order("created_at", { ascending: true }),
       ]);
 
       if (stockError) { setDataErr("Could not load the universe."); return; }
@@ -137,10 +140,6 @@ function Screener({ user }: { user: UserState }) {
       setStocks(rows as StockRow[]); stocksRef.current = rows as StockRow[];
       setDataAsOf(rows.reduce((m, r) => (r.updated_at && r.updated_at > m ? r.updated_at : m), ""));
       if (sv) setSaved(sv.map((r: any) => ({ id: r.id, name: r.name, query: r.query, filters: r.filters, ranking: r.ranking })));
-      if (!prefResult.error && prefResult.data) {
-        setPreferences(prefResult.data.map((r: any) => ({ id: r.id, field: r.field, op: r.op, value: r.value })));
-        setPreferencesReady(true);
-      }
 
       const s = new URLSearchParams(window.location.search).get("s");
       const dec = s ? decodeScreen(s) : null;
@@ -224,14 +223,18 @@ function Screener({ user }: { user: UserState }) {
   };
   const changeRanking = (rk: string) => { setRanking(rk); recompute(filters, rk); };
 
+  const persistPreferences = async (next: PreferenceRow[]) => {
+    const { error } = await supabase.auth.updateUser({ data: { [DEFAULTS_METADATA_KEY]: next } });
+    if (error) return false;
+    setPreferences(next);
+    return true;
+  };
+
   const saveDefault = async (filter: Filter) => {
-    if (!preferencesReady) return;
-    if (preferences.some((p) => sameFilter(p as any, filter))) return flash("That default is already saved.");
-    const { data, error } = await supabase.from("user_preferences")
-      .insert({ user_id: user.id, field: filter.field, op: filter.op, value: filter.value }).select().single();
-    if (error) return flash("Could not save that default.");
-    const pref: PreferenceRow = { id: data.id, field: data.field, op: data.op, value: data.value };
-    setPreferences((p) => [...p, pref]);
+    if (preferences.some((p) => sameFilter(p, filter))) return flash("That default is already saved.");
+    const pref: PreferenceRow = { id: `pref_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, field: filter.field, op: filter.op, value: filter.value };
+    const nextPreferences = [...preferences, pref];
+    if (!(await persistPreferences(nextPreferences))) return flash("Could not save that default.");
     setFilters((fs) => {
       const next = fs.map((f) => f.id === filter.id ? { ...f, source: "default" as const } : f);
       recompute(next); return next;
@@ -241,11 +244,10 @@ function Screener({ user }: { user: UserState }) {
 
   const deleteDefault = async (id: string) => {
     const pref = preferences.find((p) => p.id === id);
-    const { error } = await supabase.from("user_preferences").delete().eq("id", id);
-    if (error) return flash("Could not remove that default.");
-    setPreferences((p) => p.filter((x) => x.id !== id));
+    const nextPreferences = preferences.filter((p) => p.id !== id);
+    if (!(await persistPreferences(nextPreferences))) return flash("Could not remove that default.");
     if (pref) {
-      setFilters((fs) => fs.map((f) => f.source === "default" && sameFilter(f, pref as any) ? { ...f, source: "user" as const } : f));
+      setFilters((fs) => fs.map((f) => f.source === "default" && sameFilter(f, pref) ? { ...f, source: "user" as const } : f));
     }
     flash("Default removed.");
   };
@@ -306,7 +308,7 @@ function Screener({ user }: { user: UserState }) {
         showAll={showAll} onToggleShowAll={() => setShowAll((v) => !v)} dataAsOf={dataAsOf} onSave={saveScreen} onShare={shareLink} /></section>}
 
       <section style={{ marginTop: 30 }}><Saved saved={saved} onLoad={loadScreen} onDelete={deleteScreen} /></section>
-      {preferencesReady && <section style={{ marginTop: 30 }}><Preferences preferences={preferences} onDelete={deleteDefault} /></section>}
+      <section style={{ marginTop: 30 }}><Preferences preferences={preferences} onDelete={deleteDefault} /></section>
     </main>
     {toast && <div style={{ position: "fixed", bottom: 22, left: "50%", transform: "translateX(-50%)", background: T.ink, color: "#fff", padding: "10px 18px", borderRadius: 10, fontSize: 14, zIndex: 50 }}>{toast}</div>}
   </div>;
