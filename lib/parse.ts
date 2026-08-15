@@ -1,32 +1,52 @@
 import { FIELDS, OPS, RANKINGS, SECTORS, type Filter, type Op } from "./fields";
 import { complete } from "./llm";
 import { fallbackParse, type ParsedScreen } from "./fallback-parse";
-
-// One model call turns a sentence into a structured screen. No orchestration,
-// no routing. Locked (user-edited) filters are preserved on refinement so
-// natural-language edits patch the set rather than regenerate it.
+import { applyRefinement, validRanking, type RefinementAction } from "./filter-ops";
 
 export interface ParseResult extends ParsedScreen {
   source: "model" | "fallback";
+  actions?: RefinementAction[];
 }
 
-function buildSystem(locked: Filter[]): string {
-  const vocab = Object.values(FIELDS)
+function vocab() {
+  return Object.values(FIELDS)
     .map((m) => `${m.key} (${m.label}${m.unit ? ", " + m.unit : ""}${m.kind === "cat" ? ", one of: " + SECTORS.join("/") : ""})`)
     .join("; ");
-  const rankKeys = Object.values(RANKINGS).map((r) => `${r.key} (${r.label})`).join("; ");
+}
 
+function rankVocab() {
+  return Object.values(RANKINGS).map((r) => `${r.key} (${r.label})`).join("; ");
+}
+
+function buildNewSystem(): string {
   return [
-    "You convert a plain-English US stock screen into a strict JSON object.",
-    `Only use these filter fields: ${vocab}.`,
-    "Operators: <, <=, >, >=, == (use == only for sector).",
-    `Ranking must be exactly one of: ${rankKeys}.`,
-    locked.length
-      ? `This is a refinement. Keep these locked filters EXACTLY and only add or change others: ${JSON.stringify(locked.map(({ field, op, value }) => ({ field, op, value })))}.`
-      : "",
-    "When the request is vague (e.g. 'safe', 'quality'), translate it into concrete filters and record each leap in \"assumptions\".",
-    'Respond with ONLY minified JSON of shape: {"filters":[{"field":"pe","op":"<","value":15}],"ranking":"value","interpretation":"one short sentence","assumptions":["..."]}',
-  ].filter(Boolean).join(" ");
+    "You convert a plain-English US stock screen into strict JSON.",
+    `Only use these filter fields: ${vocab()}.`,
+    "Numeric operators: <, <=, >, >=, ==. Categorical sector operators: == and !=.",
+    "A range is represented as two filters on the same field. Example: P/E between 10 and 20 => pe>=10 and pe<=20.",
+    "For exclusions such as 'exclude Energy', use sector != Energy.",
+    `Ranking must be exactly one of: ${rankVocab()}.`,
+    "When the request is vague, translate only into supported concrete filters and record each judgment in assumptions.",
+    'Respond ONLY with minified JSON: {"filters":[{"field":"pe","op":"<","value":15}],"ranking":"value","interpretation":"one short sentence","assumptions":[]}',
+  ].join(" ");
+}
+
+function buildRefineSystem(previous: Filter[]): string {
+  return [
+    "You update an existing stock screen from one short user instruction. This is NOT a conversation and you must not regenerate unrelated criteria.",
+    `Only use these filter fields: ${vocab()}.`,
+    "Numeric operators: <, <=, >, >=, ==. Categorical sector operators: == and !=.",
+    `Current filters: ${JSON.stringify(previous.map(({ field, op, value, source }) => ({ field, op, value, source })))}.`,
+    "Return only changes as actions. Allowed action types: add, remove, replace.",
+    "Use add for a new criterion. Keep every unrelated existing filter exactly as-is.",
+    "Use remove only when the user explicitly asks to remove/drop/delete a criterion. A remove action may specify only field to remove all conditions on that metric.",
+    "Use replace only when the user explicitly changes an existing criterion or says 'instead'. Replace removes existing conditions for that field before adding the new one.",
+    "Never change a numeric threshold merely because a new criterion was added.",
+    "Ranges are two add actions on the same field unless the user explicitly replaces that field.",
+    "Exclusions such as 'exclude Energy' use sector != Energy.",
+    `If ranking changes, ranking must be one of: ${rankVocab()}; otherwise return null.`,
+    'Respond ONLY with minified JSON: {"actions":[{"type":"add","field":"revGrowth","op":">","value":10}],"ranking":null,"interpretation":"one short sentence","assumptions":[]}',
+  ].join(" ");
 }
 
 function extractJson(text: string): any {
@@ -38,49 +58,83 @@ function extractJson(text: string): any {
 }
 
 let counter = 0;
-function coerce(rawFilters: any[], locked: Filter[]): Filter[] {
-  const valid: Filter[] = [];
-  for (const f of rawFilters ?? []) {
-    const meta = FIELDS[f?.field];
-    if (!meta) continue;
-    if (!OPS.includes(f?.op)) continue;
-    let value: number | string = f?.value;
-    if (meta.kind === "num") {
-      const n = Number(value);
-      if (!Number.isFinite(n)) continue;
-      value = n;
-    } else {
-      // sector: snap to a known sector, case-insensitively
-      const hit = SECTORS.find((s) => s.toLowerCase() === String(value).toLowerCase());
-      if (!hit) continue;
-      value = hit;
-    }
-    valid.push({ id: `${f.field}_${f.op}_${counter++}`, field: f.field, op: f.op as Op, value, source: "ai" });
+function coerceFilter(raw: any, source: Filter["source"] = "ai"): Filter | null {
+  const meta = FIELDS[raw?.field];
+  if (!meta) return null;
+  if (!OPS.includes(raw?.op)) return null;
+  const op = raw.op as Op;
+  if (meta.kind === "cat" && op !== "==" && op !== "!=") return null;
+  if (meta.kind === "num" && op === "!=") return null;
+
+  let value: number | string = raw?.value;
+  if (meta.kind === "num") {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return null;
+    value = n;
+  } else {
+    const hit = SECTORS.find((s) => s.toLowerCase() === String(value).toLowerCase());
+    if (!hit) return null;
+    value = hit;
   }
-  // Sticky merge: locked filters win, model may add non-conflicting fields.
-  const lockedFields = new Set(locked.map((f) => f.field));
-  return [...locked, ...valid.filter((f) => !lockedFields.has(f.field))];
+  return { id: `${raw.field}_${op}_${counter++}`, field: raw.field, op, value, source };
+}
+
+function coerceFilters(rawFilters: any[]): Filter[] {
+  return (rawFilters ?? []).map((f) => coerceFilter(f)).filter(Boolean) as Filter[];
+}
+
+function coerceActions(rawActions: any[]): RefinementAction[] {
+  const actions: RefinementAction[] = [];
+  for (const raw of rawActions ?? []) {
+    if (!["add", "remove", "replace"].includes(raw?.type) || !FIELDS[raw?.field]) continue;
+    if (raw.type === "remove") {
+      const action: RefinementAction = { type: "remove", field: raw.field };
+      if (raw.op && OPS.includes(raw.op)) (action as any).op = raw.op;
+      if (raw.value !== undefined) (action as any).value = raw.value;
+      actions.push(action);
+      continue;
+    }
+    const filter = coerceFilter(raw);
+    if (!filter) continue;
+    actions.push({ type: raw.type, field: filter.field, op: filter.op, value: filter.value });
+  }
+  return actions;
 }
 
 export async function parseQuery(
   query: string,
   prev: Filter[] = [],
-  lockedIds: string[] = []
+  _lockedIds: string[] = []
 ): Promise<ParseResult> {
-  const locked = prev.filter((f) => lockedIds.includes(f.id));
+  const isRefine = prev.length > 0;
   try {
-    const raw = await complete({ system: buildSystem(locked), user: query });
-    const parsed = extractJson(raw);
-    const filters = coerce(parsed.filters, locked);
+    const rawText = await complete({ system: isRefine ? buildRefineSystem(prev) : buildNewSystem(), user: query });
+    const parsed = extractJson(rawText);
+
+    if (isRefine) {
+      const actions = coerceActions(parsed.actions);
+      if (!actions.length && !validRanking(parsed.ranking)) throw new Error("no valid refinement actions");
+      const filters = applyRefinement(prev, actions, "ai");
+      return {
+        filters,
+        ranking: validRanking(parsed.ranking) ?? "marketCap",
+        interpretation: typeof parsed.interpretation === "string" ? parsed.interpretation : "Updated the screen.",
+        assumptions: Array.isArray(parsed.assumptions) ? parsed.assumptions.filter((a: any) => typeof a === "string") : [],
+        actions,
+        source: "model",
+      };
+    }
+
+    const filters = coerceFilters(parsed.filters);
     if (!filters.length) throw new Error("no valid filters");
     return {
       filters,
-      ranking: RANKINGS[parsed.ranking] ? parsed.ranking : "marketCap",
+      ranking: validRanking(parsed.ranking) ?? "marketCap",
       interpretation: typeof parsed.interpretation === "string" ? parsed.interpretation : "Interpreted your request into the filters below.",
       assumptions: Array.isArray(parsed.assumptions) ? parsed.assumptions.filter((a: any) => typeof a === "string") : [],
       source: "model",
     };
   } catch {
-    return { ...fallbackParse(query, prev, lockedIds), source: "fallback" };
+    return { ...fallbackParse(query, prev), source: "fallback" };
   }
 }
