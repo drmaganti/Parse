@@ -1,7 +1,7 @@
-import { parseQuery } from "../../../lib/parse";
+import { parseQuery, type ParseMode } from "../../../lib/parse";
 
 // POST /api/parse
-// body: { query: string, filters?: Filter[], ranking?: string, lockedIds?: string[] }
+// body: { query: string, filters?: Filter[], ranking?: string, mode?: "new" | "refine" }
 // Runs server-side so the model key never reaches the browser.
 
 export const runtime = "nodejs";
@@ -20,7 +20,8 @@ export async function POST(req: Request) {
   const filters = Array.isArray(body?.filters) ? body.filters : [];
   const lockedIds = Array.isArray(body?.lockedIds) ? body.lockedIds : [];
   const ranking = typeof body?.ranking === "string" ? body.ranking : "marketCap";
+  const mode: ParseMode | undefined = body?.mode === "refine" || body?.mode === "new" ? body.mode : undefined;
 
-  const result = await parseQuery(query, filters, lockedIds, ranking);
+  const result = await parseQuery(query, filters, lockedIds, ranking, mode);
   return Response.json(result);
 }
