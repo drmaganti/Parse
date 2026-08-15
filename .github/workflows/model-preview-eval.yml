@@ -1,0 +1,58 @@
+name: P0 Model Preview Eval
+
+on:
+  push:
+    branches: [agent/p0-parser-hardening]
+
+jobs:
+  model-eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Wait for Vercel preview and evaluate real model
+        env:
+          PREVIEW_URL: https://parse-git-agent-p0-parser-hardening-nrichapps.vercel.app
+        run: |
+          node <<'NODE'
+          const base = process.env.PREVIEW_URL;
+          const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+          async function getBatch(start) {
+            const url = `${base}/api/eval-preview?start=${start}&count=5`;
+            let last;
+            for (let attempt = 1; attempt <= 20; attempt++) {
+              try {
+                const res = await fetch(url);
+                if (res.ok) return await res.json();
+                last = new Error(`${res.status} ${await res.text()}`);
+              } catch (e) { last = e; }
+              await sleep(5000);
+            }
+            throw last || new Error(`Preview did not become ready: ${url}`);
+          }
+
+          const rows = [];
+          let start = 0;
+          let total = Infinity;
+          while (start < total) {
+            const batch = await getBatch(start);
+            total = batch.total;
+            rows.push(...batch.rows);
+            console.log(`batch ${start}-${start + batch.count - 1}: ${batch.passed}/${batch.count}`);
+            start += batch.count;
+          }
+
+          const failures = rows.filter((r) => !r.ok);
+          const criticalFailures = failures.filter((r) => r.critical);
+          const fallbacks = rows.filter((r) => r.source !== 'model');
+          const passRate = rows.length ? (rows.length - failures.length) / rows.length : 0;
+
+          console.log(`\nreal model: ${rows.length - failures.length}/${rows.length} (${(passRate * 100).toFixed(1)}%)`);
+          console.log(`critical failures: ${criticalFailures.length}`);
+          console.log(`fallbacks: ${fallbacks.length}`);
+          if (failures.length) console.log(JSON.stringify(failures, null, 2));
+
+          if (passRate < 0.95 || criticalFailures.length || fallbacks.length) process.exit(1);
+          NODE
