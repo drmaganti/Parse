@@ -21,8 +21,8 @@ function addUnique(out: Filter[], f: Filter) {
 
 function opFor(word?: string): Op {
   const w = (word || "over").toLowerCase();
-  if (w === "at most" || w === "<=") return "<=";
-  if (w === "at least" || w === ">=") return ">=";
+  if (w === "at most" || w === "no more than" || w === "maximum" || w === "max" || w === "<=") return "<=";
+  if (w === "at least" || w === "minimum" || w === "min" || w === ">=") return ">=";
   if (/under|below|less than|lower than|</.test(w)) return "<";
   return ">";
 }
@@ -50,7 +50,7 @@ function fieldMention(q: string): string | null {
     ["divYield", /dividend yield|yield(?:ing)?/],
     ["beta", /\bbeta\b|volatility/],
     ["marketCap", /market\s*cap|large[- ]?cap|small[- ]?cap|mega[- ]?cap|company size/],
-    ["revGrowth", /revenue growth|growing revenue|growth/],
+    ["revGrowth", /revenue growth|growing revenue/],
     ["rsi", /\brsi\b|oversold/],
     ["from52wHigh", /52[- ]?week high|off (?:the )?high|below (?:their )?high|near (?:the )?high/],
     ["chg1w", /one[- ]?week|1w|this week|weekly/],
@@ -72,29 +72,38 @@ function sectorExcluded(q: string, sec: string): boolean {
   });
 }
 
+function hasRankingIntent(q: string): boolean {
+  return /cheapest first|lowest valuation|highest yield|highest growth|strongest momentum|most beaten|biggest decline|largest first|rank by/.test(q);
+}
+
+function hasKnownUnsupportedMetric(q: string): boolean {
+  return /\broic\b|return on invested capital|\broe\b|return on equity|\broa\b|return on assets|free cash flow|\bfcf\b|debt\s*(?:to|\/)\s*ebitda|ev\s*(?:to|\/)\s*ebitda|\bpeg\b|current ratio|interest coverage|earnings growth|eps growth|profit growth|debt\s*(?:to|\/)\s*equity/.test(q);
+}
+
 function parseFresh(query: string): ParsedScreen {
   const q = ` ${query.toLowerCase()} `;
   const out: Filter[] = [];
   const assumptions: string[] = [];
   let ranking = "marketCap";
+  const cmp = "under|below|less than|lower than|at most|no more than|maximum|max|<=|<|over|above|greater than|more than|at least|minimum|min|>=|>";
 
   addRange(out, "pe", q.match(/(?:\bp\/?e\b|price.?to.?earnings)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
   addRange(out, "pb", q.match(/(?:\bp\/?b\b|price.?to.?book)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
   addRange(out, "ps", q.match(/(?:\bp\/?s\b|price.?to.?sales)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
   addRange(out, "beta", q.match(/\bbeta\b[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
   addRange(out, "marketCap", q.match(/market\s*cap[^\d-]*between\s*\$?(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*\$?(-?\d+(?:\.\d+)?)/));
-  addRange(out, "revGrowth", q.match(/(?:revenue growth|growth)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
+  addRange(out, "revGrowth", q.match(/revenue growth[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
   addRange(out, "divYield", q.match(/(?:dividend yield|yield(?:ing)?)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
   addRange(out, "rsi", q.match(/\brsi\b[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
 
-  if (!out.some((f) => f.field === "pe")) addThreshold(out, "pe", q.match(/(?:\bp\/?e\b|price.?to.?earnings)[^\d-]*(under|below|less than|lower than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*\$?(-?\d+(?:\.\d+)?)/));
-  if (!out.some((f) => f.field === "pb")) addThreshold(out, "pb", q.match(/(?:\bp\/?b\b|price.?to.?book)[^\d-]*(under|below|less than|lower than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*\$?(-?\d+(?:\.\d+)?)/));
-  if (!out.some((f) => f.field === "ps")) addThreshold(out, "ps", q.match(/(?:\bp\/?s\b|price.?to.?sales)[^\d-]*(under|below|less than|lower than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*\$?(-?\d+(?:\.\d+)?)/));
-  if (!out.some((f) => f.field === "divYield")) addThreshold(out, "divYield", q.match(/(?:dividend yield|yield(?:ing)?)\s*(?:(under|below|less than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*)?(-?\d+(?:\.\d+)?)/));
-  if (!out.some((f) => f.field === "beta")) addThreshold(out, "beta", q.match(/\bbeta\b[^\d-]*(under|below|less than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*(-?\d+(?:\.\d+)?)/));
-  if (!out.some((f) => f.field === "marketCap")) addThreshold(out, "marketCap", q.match(/market\s*cap[^\d-]*(under|below|less than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*\$?(-?\d+(?:\.\d+)?)/));
-  if (!out.some((f) => f.field === "revGrowth")) addThreshold(out, "revGrowth", q.match(/(?:revenue growth|growing revenue|grow(?:ing)? revenue|growth)[^\d-]*(under|below|less than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*(-?\d+(?:\.\d+)?)/));
-  if (!out.some((f) => f.field === "rsi")) addThreshold(out, "rsi", q.match(/\brsi\b[^\d-]*(under|below|less than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*(-?\d+(?:\.\d+)?)/));
+  if (!out.some((f) => f.field === "pe")) addThreshold(out, "pe", q.match(new RegExp(`(?:\\bp\\/?e\\b|price.?to.?earnings)[^\\d-]*(${cmp})\\s*\\$?(-?\\d+(?:\\.\\d+)?)`)));
+  if (!out.some((f) => f.field === "pb")) addThreshold(out, "pb", q.match(new RegExp(`(?:\\bp\\/?b\\b|price.?to.?book)[^\\d-]*(${cmp})\\s*\\$?(-?\\d+(?:\\.\\d+)?)`)));
+  if (!out.some((f) => f.field === "ps")) addThreshold(out, "ps", q.match(new RegExp(`(?:\\bp\\/?s\\b|price.?to.?sales)[^\\d-]*(${cmp})\\s*\\$?(-?\\d+(?:\\.\\d+)?)`)));
+  if (!out.some((f) => f.field === "divYield")) addThreshold(out, "divYield", q.match(new RegExp(`(?:dividend yield|yield(?:ing)?)\\s*(?:(${cmp})\\s*)?(-?\\d+(?:\\.\\d+)?)`)));
+  if (!out.some((f) => f.field === "beta")) addThreshold(out, "beta", q.match(new RegExp(`\\bbeta\\b[^\\d-]*(${cmp})\\s*(-?\\d+(?:\\.\\d+)?)`)));
+  if (!out.some((f) => f.field === "marketCap")) addThreshold(out, "marketCap", q.match(new RegExp(`market\\s*cap[^\\d-]*(${cmp})\\s*\\$?(-?\\d+(?:\\.\\d+)?)`)));
+  if (!out.some((f) => f.field === "revGrowth")) addThreshold(out, "revGrowth", q.match(new RegExp(`(?:revenue growth|growing revenue|grow(?:ing)? revenue)[^\\d-]*(${cmp})\\s*(-?\\d+(?:\\.\\d+)?)`)));
+  if (!out.some((f) => f.field === "rsi")) addThreshold(out, "rsi", q.match(new RegExp(`\\brsi\\b[^\\d-]*(${cmp})\\s*(-?\\d+(?:\\.\\d+)?)`)));
 
   const positiveGrowth = /positive revenue growth|revenue (?:is )?growing|still growing revenue/.test(q);
   if (positiveGrowth && !out.some((f) => f.field === "revGrowth")) addUnique(out, mk("revGrowth", ">", 0));
@@ -118,7 +127,8 @@ function parseFresh(query: string): ParsedScreen {
     if (!out.some((f) => f.field === "divYield") && !/highest yield/.test(q)) addUnique(out, mk("divYield", ">", 3));
     ranking = "dividend";
   }
-  if (/growth|growing|fast-growing|highest growth/.test(q)) {
+  const genericGrowth = /\bgrowth (?:stocks|companies|names)\b|\bgrowing (?:technology|tech|healthcare|financial|consumer|industrial|companies|stocks|names)\b|fast-growing|highest growth|growth at a reasonable price|\bgarp\b/.test(q);
+  if (!hasKnownUnsupportedMetric(q) && (genericGrowth || /revenue growth|growing revenue/.test(q))) {
     if (!out.some((f) => f.field === "revGrowth") && !/highest growth/.test(q)) addUnique(out, mk("revGrowth", ">", 15));
     ranking = "quality";
   }
@@ -178,15 +188,12 @@ export function fallbackParse(
   forceRefine = false
 ): ParsedScreen {
   const fresh = parseFresh(query);
-  if (!forceRefine && !prev.length) {
-    if (!fresh.filters.length) fresh.filters = [mk("marketCap", ">", 50)];
-    return fresh;
-  }
+  if (!forceRefine && !prev.length) return fresh;
 
   const q = ` ${query.toLowerCase()} `;
   const actions: RefinementAction[] = [];
   const explicitRemove = /\b(remove|drop|delete)\b/.test(q);
-  const explicitReplace = /\b(instead|replace|change|set|use)\b/.test(q) && /\b(instead|replace|change|set|to|under|below|above|over|between)\b/.test(q);
+  const explicitReplace = /\b(instead|replace|change|set)\b/.test(q) || /\buse\b.*\binstead\b/.test(q);
 
   if (explicitRemove) {
     const field = fieldMention(q);
@@ -202,12 +209,28 @@ export function fallbackParse(
   }
 
   const filters = applyRefinement(prev, actions, "ai");
-  const rankingMentioned = /cheapest|highest yield|highest growth|momentum|most beaten|biggest decline|largest first|rank by/.test(q);
+  const rankingMentioned = hasRankingIntent(q);
   return {
     filters,
     ranking: rankingMentioned ? fresh.ranking : currentRanking,
-    interpretation: actions.length ? "Updated the current screen." : "No supported screen change was found.",
+    interpretation: actions.length || rankingMentioned ? "Updated the current screen." : "No supported screen change was found.",
     assumptions: fresh.assumptions,
     actions,
   };
+}
+
+export function tryRuleParse(
+  query: string,
+  prev: Filter[] = [],
+  currentRanking = "marketCap",
+  mode: "new" | "refine" = prev.length ? "refine" : "new"
+): ParsedScreen | null {
+  const q = ` ${query.toLowerCase()} `;
+  if (hasKnownUnsupportedMetric(q)) return null;
+  const result = fallbackParse(query, mode === "refine" ? prev : [], [], currentRanking, mode === "refine");
+  if (mode === "refine") {
+    const rankingChanged = hasRankingIntent(q) && result.ranking !== currentRanking;
+    return (result.actions?.length || rankingChanged || result.assumptions.length) ? result : null;
+  }
+  return (result.filters.length || hasRankingIntent(q) || result.assumptions.length) ? result : null;
 }
