@@ -20,6 +20,7 @@ export function makeFilter(field: string, op: Op, value: number | string, source
 
 export function applyRefinement(previous: Filter[], actions: RefinementAction[], source: Filter["source"] = "ai"): Filter[] {
   let next = [...previous];
+  const replacedFields = new Set<string>();
 
   for (const action of actions) {
     if (!FIELDS[action.field]) continue;
@@ -35,7 +36,13 @@ export function applyRefinement(previous: Filter[], actions: RefinementAction[],
       continue;
     }
 
-    if (action.type === "replace") next = next.filter((f) => f.field !== action.field);
+    // A replacement can contain multiple bounds for the same metric. Clear the
+    // previous metric only once, then treat subsequent replacement actions for
+    // that field as additions to the new definition.
+    if (action.type === "replace" && !replacedFields.has(action.field)) {
+      next = next.filter((f) => f.field !== action.field);
+      replacedFields.add(action.field);
+    }
 
     const candidate = makeFilter(action.field, action.op, action.value, source);
     if (!next.some((f) => sameFilter(f, candidate))) next.push(candidate);
