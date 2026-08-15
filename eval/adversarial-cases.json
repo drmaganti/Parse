@@ -1,0 +1,53 @@
+{
+  "_comment": "P0.1 adversarial/model-quality cases. Explicit thresholds are exact. Critical cases must all pass in model evaluation.",
+  "cases": [
+    {"query":"P/E under 19.5","expect":{"filters":[{"field":"pe","op":"<","value":19.5}],"filterCount":1},"exactFilters":true,"critical":true},
+    {"query":"Dividend yield at least 2.75%","expect":{"filters":[{"field":"divYield","op":">=","value":2.75}],"ranking":"dividend","filterCount":1},"exactFilters":true,"critical":true},
+    {"query":"Market cap above $12.5 billion","expect":{"filters":[{"field":"marketCap","op":">","value":12.5}],"filterCount":1},"exactFilters":true,"critical":true},
+    {"query":"Revenue growth below 7.5%","expect":{"filters":[{"field":"revGrowth","op":"<","value":7.5}],"filterCount":1},"exactFilters":true,"critical":true},
+    {"query":"Beta no more than 1.1","expect":{"filters":[{"field":"beta","op":"<=","value":1.1}],"filterCount":1},"exactFilters":true,"critical":true,"modelOnly":true},
+    {"query":"P/E maximum 22","expect":{"filters":[{"field":"pe","op":"<=","value":22}],"filterCount":1},"exactFilters":true,"modelOnly":true},
+    {"query":"P/B minimum 1.5","expect":{"filters":[{"field":"pb","op":">=","value":1.5}],"filterCount":1},"exactFilters":true,"modelOnly":true},
+    {"query":"P/E < 14; beta < 0.95","expect":{"filters":[{"field":"pe","op":"<","value":14},{"field":"beta","op":"<","value":0.95}],"filterCount":2},"exactFilters":true,"critical":true},
+    {"query":"TECH stocks, P/E BELOW 18","expect":{"filters":[{"field":"sector","op":"==","value":"Technology"},{"field":"pe","op":"<","value":18}],"filterCount":2},"exactFilters":true,"critical":true},
+    {"query":"Healthcare companies; revenue growth above 12%; beta below 1.3","expect":{"filters":[{"field":"sector","op":"==","value":"Healthcare"},{"field":"revGrowth","op":">","value":12},{"field":"beta","op":"<","value":1.3}],"filterCount":3},"exactFilters":true,"critical":true},
+
+    {"query":"P/E between 9.5 and 17.25","expect":{"filters":[{"field":"pe","op":">=","value":9.5},{"field":"pe","op":"<=","value":17.25}],"filterCount":2},"exactFilters":true,"critical":true},
+    {"query":"Beta between 1.4 and 0.8","expect":{"filters":[{"field":"beta","op":">=","value":0.8},{"field":"beta","op":"<=","value":1.4}],"filterCount":2},"exactFilters":true,"critical":true},
+    {"query":"Revenue growth between -5 and 10%","expect":{"filters":[{"field":"revGrowth","op":">=","value":-5},{"field":"revGrowth","op":"<=","value":10}],"filterCount":2},"exactFilters":true,"critical":true},
+    {"query":"Market cap between $25 and $75 billion","expect":{"filters":[{"field":"marketCap","op":">=","value":25},{"field":"marketCap","op":"<=","value":75}],"filterCount":2},"exactFilters":true,"critical":true},
+
+    {"query":"Exclude Energy stocks","expect":{"filters":[{"field":"sector","op":"!=","value":"Energy"}],"filterCount":1},"exactFilters":true,"critical":true},
+    {"query":"Technology, but exclude Energy","expect":{"filters":[{"field":"sector","op":"==","value":"Technology"},{"field":"sector","op":"!=","value":"Energy"}],"filterCount":2},"exactFilters":true,"critical":true},
+    {"query":"Healthcare without Utilities","expect":{"filters":[{"field":"sector","op":"==","value":"Healthcare"},{"field":"sector","op":"!=","value":"Utilities"}],"filterCount":2},"exactFilters":true,"critical":true},
+    {"query":"Avoid Real Estate, P/E under 20","expect":{"filters":[{"field":"sector","op":"!=","value":"Real Estate"},{"field":"pe","op":"<","value":20}],"filterCount":2},"exactFilters":true,"critical":true},
+    {"query":"Financials except Energy and Utilities","expect":{"filters":[{"field":"sector","op":"==","value":"Financials"},{"field":"sector","op":"!=","value":"Energy"},{"field":"sector","op":"!=","value":"Utilities"}],"filterCount":3},"exactFilters":true,"critical":true,"modelOnly":true},
+
+    {"query":"Rank by highest yield","expect":{"ranking":"dividend","filterCount":0},"exactFilters":true,"critical":true,"modelOnly":true},
+    {"query":"Rank by P/E","expect":{"ranking":"value","filterCount":0},"exactFilters":true,"critical":true,"modelOnly":true},
+    {"query":"Largest first","expect":{"ranking":"marketCap","filterCount":0},"exactFilters":true,"modelOnly":true},
+
+    {"query":"Also require revenue growth above 11%","mode":"refine","previous":[{"field":"pe","op":"<","value":18},{"field":"marketCap","op":">","value":50},{"field":"sector","op":"==","value":"Technology"}],"expect":{"filters":[{"field":"pe","op":"<","value":18},{"field":"marketCap","op":">","value":50},{"field":"sector","op":"==","value":"Technology"},{"field":"revGrowth","op":">","value":11}],"filterCount":4},"exactFilters":true,"critical":true},
+    {"query":"Also add P/E above 8","mode":"refine","previous":[{"field":"pe","op":"<","value":20},{"field":"sector","op":"==","value":"Healthcare"}],"expect":{"filters":[{"field":"pe","op":"<","value":20},{"field":"pe","op":">","value":8},{"field":"sector","op":"==","value":"Healthcare"}],"filterCount":3},"exactFilters":true,"critical":true},
+    {"query":"Add beta below 1.05","mode":"refine","previous":[{"field":"pe","op":"<","value":17,"source":"user"},{"field":"revGrowth","op":">","value":10}],"expect":{"filters":[{"field":"pe","op":"<","value":17},{"field":"revGrowth","op":">","value":10},{"field":"beta","op":"<","value":1.05}],"filterCount":3},"exactFilters":true,"critical":true},
+    {"query":"Change P/E to under 16","mode":"refine","previous":[{"field":"pe","op":">","value":8},{"field":"pe","op":"<","value":20},{"field":"sector","op":"==","value":"Technology"}],"expect":{"filters":[{"field":"pe","op":"<","value":16},{"field":"sector","op":"==","value":"Technology"}],"filterCount":2},"exactFilters":true,"critical":true},
+    {"query":"Use P/E between 10 and 18 instead","mode":"refine","previous":[{"field":"pe","op":"<","value":25},{"field":"beta","op":"<","value":1.2}],"expect":{"filters":[{"field":"pe","op":">=","value":10},{"field":"pe","op":"<=","value":18},{"field":"beta","op":"<","value":1.2}],"filterCount":3},"exactFilters":true,"critical":true},
+    {"query":"Remove the beta filter","mode":"refine","previous":[{"field":"pe","op":"<","value":20},{"field":"beta","op":"<","value":1.1},{"field":"revGrowth","op":">","value":10}],"expect":{"filters":[{"field":"pe","op":"<","value":20},{"field":"revGrowth","op":">","value":10}],"filterCount":2},"reject":[{"field":"beta"}],"exactFilters":true,"critical":true},
+    {"query":"Exclude Energy","mode":"refine","previous":[{"field":"sector","op":"==","value":"Technology"},{"field":"pe","op":"<","value":20}],"expect":{"filters":[{"field":"sector","op":"==","value":"Technology"},{"field":"pe","op":"<","value":20},{"field":"sector","op":"!=","value":"Energy"}],"filterCount":3},"exactFilters":true,"critical":true},
+    {"query":"Rank by highest yield","mode":"refine","previous":[{"field":"pe","op":"<","value":20},{"field":"beta","op":"<","value":1.2}],"currentRanking":"marketCap","expect":{"filters":[{"field":"pe","op":"<","value":20},{"field":"beta","op":"<","value":1.2}],"ranking":"dividend","filterCount":2},"exactFilters":true,"critical":true},
+
+    {"query":"ROIC above 15%","expect":{"filterCount":0,"ranking":"marketCap"},"requireAssumptions":true,"exactFilters":true,"modelOnly":true,"critical":true},
+    {"query":"Positive free cash flow","expect":{"filterCount":0,"ranking":"marketCap"},"requireAssumptions":true,"exactFilters":true,"modelOnly":true},
+    {"query":"ROE above 20%","expect":{"filterCount":0,"ranking":"marketCap"},"requireAssumptions":true,"exactFilters":true,"modelOnly":true},
+    {"query":"P/E under 20 and ROIC above 15%","expect":{"filters":[{"field":"pe","op":"<","value":20}],"filterCount":1},"requireAssumptions":true,"exactFilters":true,"modelOnly":true,"critical":true},
+    {"query":"Debt to EBITDA under 2","expect":{"filterCount":0,"ranking":"marketCap"},"requireAssumptions":true,"exactFilters":true,"modelOnly":true},
+    {"query":"Quality companies","expect":{"ranking":"marketCap"},"requireAssumptions":true,"modelOnly":true},
+    {"query":"Safe companies","expect":{"filters":[{"field":"beta","op":"<","value":1}]},"requireAssumptions":true,"modelOnly":true},
+
+    {"query":"Add ROIC above 15%","mode":"refine","previous":[{"field":"pe","op":"<","value":20}],"expect":{"filters":[{"field":"pe","op":"<","value":20}],"filterCount":1},"requireAssumptions":true,"exactFilters":true,"modelOnly":true,"critical":true},
+    {"query":"Also require free cash flow growth","mode":"refine","previous":[{"field":"pe","op":"<","value":20},{"field":"sector","op":"==","value":"Technology"}],"expect":{"filters":[{"field":"pe","op":"<","value":20},{"field":"sector","op":"==","value":"Technology"}],"filterCount":2},"requireAssumptions":true,"exactFilters":true,"modelOnly":true},
+    {"query":"Add dividend yield above 3%","mode":"refine","previous":[{"field":"pe","op":"<","value":17,"source":"user"},{"field":"beta","op":"<","value":1.2,"source":"user"}],"expect":{"filters":[{"field":"pe","op":"<","value":17},{"field":"beta","op":"<","value":1.2},{"field":"divYield","op":">","value":3}],"filterCount":3},"exactFilters":true,"critical":true},
+    {"query":"Also require P/E below 15","mode":"refine","previous":[{"field":"pe","op":">","value":8},{"field":"sector","op":"==","value":"Financials"}],"expect":{"filters":[{"field":"pe","op":">","value":8},{"field":"pe","op":"<","value":15},{"field":"sector","op":"==","value":"Financials"}],"filterCount":3},"exactFilters":true,"critical":true},
+    {"query":"Drop market cap","mode":"refine","previous":[{"field":"marketCap","op":">","value":50,"source":"default"},{"field":"pe","op":"<","value":20},{"field":"sector","op":"==","value":"Technology"}],"expect":{"filters":[{"field":"pe","op":"<","value":20},{"field":"sector","op":"==","value":"Technology"}],"filterCount":2},"reject":[{"field":"marketCap"}],"exactFilters":true,"critical":true}
+  ]
+}

@@ -7,8 +7,12 @@
     "build": "next build",
     "start": "next start",
     "ingest": "tsx scripts/ingest.ts",
+    "test:parser-contract": "tsx eval/contract.ts",
     "eval": "tsx eval/run.ts",
-    "eval:offline": "OFFLINE=1 tsx eval/run.ts"
+    "eval:model": "MODEL_RUNS=2 MODEL_MIN_PASS_RATE=0.95 tsx eval/run.ts",
+    "eval:live": "MODEL_MIN_PASS_RATE=0.95 tsx eval/live.ts",
+    "eval:offline": "OFFLINE=1 tsx eval/run.ts",
+    "test:p0-parser": "npm run test:parser-contract && npm run eval:offline"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
