@@ -30,7 +30,9 @@ function buildNewSystem(): string {
     "A range is represented as two filters on the same field. Example: P/E between 10 and 20 => pe>=10 and pe<=20.",
     "For exclusions such as 'exclude Energy', use sector != Energy.",
     "Do not add unrelated filters just because they are common in investing.",
+    "If the request asks for an unsupported metric, do not substitute another metric. Omit the unsupported criterion and record it in assumptions. If nothing supported remains, return an empty filters array.",
     `Ranking must be exactly one of: ${rankVocab()}.`,
+    "Ranking-only requests may return an empty filters array.",
     "When the request is vague, translate only into supported concrete filters and record each judgment in assumptions.",
     'Respond ONLY with minified JSON: {"filters":[{"field":"pe","op":"<","value":15}],"ranking":"value","interpretation":"one short sentence","assumptions":[]}',
   ].join(" ");
@@ -51,6 +53,7 @@ function buildRefineSystem(previous: Filter[], currentRanking: string): string {
     "Never change a numeric threshold merely because a new criterion was added.",
     "Ranges are two add actions on the same field unless the user explicitly replaces that field.",
     "Exclusions such as 'exclude Energy' use an add action with sector != Energy; exclusion is not a remove action.",
+    "If the instruction asks for an unsupported metric, return no action for that criterion and record it in assumptions. Never substitute a supported metric.",
     `If ranking changes, ranking must be one of: ${rankVocab()}; otherwise return null.`,
     'Respond ONLY with minified JSON: {"actions":[{"type":"add","field":"revGrowth","op":">","value":10}],"ranking":null,"interpretation":"one short sentence","assumptions":[]}',
   ].join(" ");
@@ -71,25 +74,28 @@ export async function parseQuery(
     if (isRefine) {
       const actions = enforceRefinementIntent(query, coerceActions(parsed.actions));
       const nextRanking = validRanking(parsed.ranking) ?? currentRanking;
-      if (!actions.length && nextRanking === currentRanking) throw new Error("no valid refinement actions");
+      const assumptions = Array.isArray(parsed.assumptions) ? parsed.assumptions.filter((a: any) => typeof a === "string") : [];
+      if (!actions.length && nextRanking === currentRanking && assumptions.length === 0) throw new Error("no valid refinement actions");
       const filters = applyRefinement(prev, actions, "ai");
       return {
         filters,
         ranking: nextRanking,
         interpretation: typeof parsed.interpretation === "string" ? parsed.interpretation : "Updated the screen.",
-        assumptions: Array.isArray(parsed.assumptions) ? parsed.assumptions.filter((a: any) => typeof a === "string") : [],
+        assumptions,
         actions,
         source: "model",
       };
     }
 
     const filters = coerceFilters(parsed.filters);
-    if (!filters.length) throw new Error("no valid filters");
+    const parsedRanking = validRanking(parsed.ranking);
+    const assumptions = Array.isArray(parsed.assumptions) ? parsed.assumptions.filter((a: any) => typeof a === "string") : [];
+    if (!filters.length && !parsedRanking && assumptions.length === 0) throw new Error("no valid screen output");
     return {
       filters,
-      ranking: validRanking(parsed.ranking) ?? "marketCap",
+      ranking: parsedRanking ?? "marketCap",
       interpretation: typeof parsed.interpretation === "string" ? parsed.interpretation : "Interpreted your request into the filters below.",
-      assumptions: Array.isArray(parsed.assumptions) ? parsed.assumptions.filter((a: any) => typeof a === "string") : [],
+      assumptions,
       source: "model",
     };
   } catch {
