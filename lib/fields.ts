@@ -1,7 +1,5 @@
 // Single source of truth for the screen vocabulary.
-// Shared by the NL parser (slice 2), the screening engine, and the UI, so the
-// three can never drift. Field keys are what the model emits; `col` is the DB
-// column the engine reads.
+// Shared by the NL parser, screening engine, and UI so behavior stays aligned.
 
 export type FieldKind = "num" | "cat";
 
@@ -27,15 +25,15 @@ export const FIELDS: Record<string, FieldMeta> = {
   sector:      { key: "sector",      col: "sector",        label: "Sector",     kind: "cat" },
 };
 
-export type Op = "<" | "<=" | ">" | ">=" | "==";
-export const OPS: Op[] = ["<", "<=", ">", ">=", "=="];
+export type Op = "<" | "<=" | ">" | ">=" | "==" | "!=";
+export const OPS: Op[] = ["<", "<=", ">", ">=", "==", "!="];
 
 export interface Filter {
   id: string;
-  field: string;      // key of FIELDS
+  field: string;
   op: Op;
   value: number | string;
-  source: "ai" | "user";
+  source: "ai" | "user" | "default";
 }
 
 // Ranking keys the model may choose. `score` returns a value sorted ascending,
@@ -68,12 +66,12 @@ const inv = (v: number | null, cap: number) => (!v || v <= 0 ? 0 : Math.max(0, c
 const n = (v: number | null) => (v == null ? 0 : v);
 
 export const RANKINGS: Record<string, Ranking> = {
-  value:     { key: "value",     label: "Cheapest first",     score: (s) => -(inv(s.pe, 60) + inv(s.pb, 80) + inv(s.ps, 30)) },
-  quality:   { key: "quality",   label: "Highest growth",     score: (s) => -n(s.rev_growth) },
-  dividend:  { key: "dividend",  label: "Highest yield",      score: (s) => -n(s.div_yield) },
+  value:     { key: "value",     label: "Cheapest first",      score: (s) => -(inv(s.pe, 60) + inv(s.pb, 80) + inv(s.ps, 30)) },
+  quality:   { key: "quality",   label: "Highest growth",      score: (s) => -n(s.rev_growth) },
+  dividend:  { key: "dividend",  label: "Highest yield",       score: (s) => -n(s.div_yield) },
   momentum:  { key: "momentum",  label: "Strongest momentum", score: (s) => -(n(s.chg_1w) * 2 + (100 + n(s.from_52w_high))) },
-  decline:   { key: "decline",   label: "Most beaten-down",   score: (s) => n(s.chg_1w) },
-  marketCap: { key: "marketCap", label: "Largest first",      score: (s) => -n(s.market_cap) },
+  decline:   { key: "decline",   label: "Most beaten-down",    score: (s) => n(s.chg_1w) },
+  marketCap: { key: "marketCap", label: "Largest first",       score: (s) => -n(s.market_cap) },
 };
 
 export const SECTORS = [

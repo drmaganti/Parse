@@ -5,8 +5,10 @@ function passes(stock: StockRow, f: Filter): boolean {
   if (!meta) return true;
 
   if (meta.kind === "cat") {
-    const v = (stock as any)[meta.col];
-    return String(v ?? "").toLowerCase() === String(f.value).toLowerCase();
+    const actual = String((stock as any)[meta.col] ?? "").toLowerCase();
+    const expected = String(f.value).toLowerCase();
+    if (f.op === "!=") return actual !== expected;
+    return actual === expected;
   }
 
   const v = (stock as any)[meta.col] as number | null;
@@ -18,6 +20,7 @@ function passes(stock: StockRow, f: Filter): boolean {
     case ">":  return v > t;
     case ">=": return v >= t;
     case "==": return v === t;
+    case "!=": return v !== t;
     default:   return true;
   }
 }
@@ -44,8 +47,6 @@ export function runScreen(
     .slice(0, limit);
 }
 
-// Per-row explanation: which active filters this stock passed. Powers the
-// "why it's here" expansion in the UI.
 export function explain(stock: StockRow, filters: Filter[]) {
   return filters
     .filter((f) => f.field && f.value !== "" && f.value != null)

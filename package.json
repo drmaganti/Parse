@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "ingest": "tsx scripts/ingest.ts",
-    "eval": "tsx eval/run.ts"
+    "eval": "tsx eval/run.ts",
+    "eval:offline": "OFFLINE=1 tsx eval/run.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
