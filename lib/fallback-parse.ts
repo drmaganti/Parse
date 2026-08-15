@@ -19,8 +19,8 @@ function addUnique(out: Filter[], f: Filter) {
   if (!out.some((x) => sameFilter(x, f))) out.push(f);
 }
 
-function opFor(word: string): Op {
-  const w = word.toLowerCase();
+function opFor(word?: string): Op {
+  const w = (word || "over").toLowerCase();
   if (w === "at most" || w === "<=") return "<=";
   if (w === "at least" || w === ">=") return ">=";
   if (/under|below|less than|lower than|</.test(w)) return "<";
@@ -59,6 +59,19 @@ function fieldMention(q: string): string | null {
   return tests.find(([, rx]) => rx.test(q))?.[0] ?? null;
 }
 
+function sectorTokens(sec: string): string[] {
+  if (sec === "Technology") return ["technology", "tech"];
+  return [sec.toLowerCase()];
+}
+
+function sectorExcluded(q: string, sec: string): boolean {
+  return sectorTokens(sec).some((token) => {
+    const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(?:exclude|excluding|except|avoid|outside|without)(?:\\s+\\w+){0,4}\\s+${escaped}\\b`, "i").test(q)
+      || new RegExp(`\\b${escaped}\\b(?:\\s+\\w+){0,3}\\s+(?:excluded|excluded sector)`, "i").test(q);
+  });
+}
+
 function parseFresh(query: string): ParsedScreen {
   const q = ` ${query.toLowerCase()} `;
   const out: Filter[] = [];
@@ -80,9 +93,7 @@ function parseFresh(query: string): ParsedScreen {
   if (!out.some((f) => f.field === "divYield")) addThreshold(out, "divYield", q.match(/(?:dividend yield|yield(?:ing)?)[^\d-]*(under|below|less than|at most|<=|<|over|above|greater than|more than|at least|>=|>)?\s*(-?\d+(?:\.\d+)?)/));
   if (!out.some((f) => f.field === "beta")) addThreshold(out, "beta", q.match(/beta[^\d-]*(under|below|less than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*(-?\d+(?:\.\d+)?)/));
   if (!out.some((f) => f.field === "marketCap")) addThreshold(out, "marketCap", q.match(/market\s*cap[^\d-]*(under|below|less than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*\$?(-?\d+(?:\.\d+)?)/));
-  if (!out.some((f) => f.field === "revGrowth")) {
-    addThreshold(out, "revGrowth", q.match(/(?:revenue growth|growing revenue|grow(?:ing)? revenue|growth)[^\d-]*(under|below|less than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*(-?\d+(?:\.\d+)?)/));
-  }
+  if (!out.some((f) => f.field === "revGrowth")) addThreshold(out, "revGrowth", q.match(/(?:revenue growth|growing revenue|grow(?:ing)? revenue|growth)[^\d-]*(under|below|less than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*(-?\d+(?:\.\d+)?)/));
   if (!out.some((f) => f.field === "rsi")) addThreshold(out, "rsi", q.match(/rsi[^\d-]*(under|below|less than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*(-?\d+(?:\.\d+)?)/));
 
   const positiveGrowth = /positive revenue growth|revenue (?:is )?growing|still growing revenue/.test(q);
@@ -138,11 +149,10 @@ function parseFresh(query: string): ParsedScreen {
   else if (/large[- ]?cap|\bbig companies\b|\blarge companies\b/.test(q) && !out.some((f) => f.field === "marketCap")) addUnique(out, mk("marketCap", ">", 50));
   if (/small[- ]?cap/.test(q) && !out.some((f) => f.field === "marketCap")) addUnique(out, mk("marketCap", "<", 20));
 
-  const exclusionLanguage = /exclude|excluding|except|avoid|outside|without/.test(q);
   for (const sec of SECTORS) {
-    const named = q.includes(sec.toLowerCase()) || (sec === "Technology" && /\btech\b/.test(q));
+    const named = sectorTokens(sec).some((token) => new RegExp(`\\b${token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(q));
     if (!named) continue;
-    addUnique(out, mk("sector", exclusionLanguage ? "!=" : "==", sec));
+    addUnique(out, mk("sector", sectorExcluded(q, sec) ? "!=" : "==", sec));
   }
 
   if (/cheapest first|lowest valuation|rank by (?:value|p\/?e)/.test(q)) ranking = "value";
