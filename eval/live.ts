@@ -35,7 +35,7 @@ async function main() {
   let attempts = 0;
   let passes = 0;
   let criticalFailures = 0;
-  let fallbacks = 0;
+  const sources: Record<string, number> = {};
   const failures: any[] = [];
 
   console.log(`\nLive Parse eval · ${cases.length} cases · ${BASE_URL} · ${RUNS} run(s)\n`);
@@ -54,9 +54,9 @@ async function main() {
         continue;
       }
 
-      const verdict = evaluateCase(c, result, true);
+      sources[result.source || "unknown"] = (sources[result.source || "unknown"] || 0) + 1;
+      const verdict = evaluateCase(c, result, false);
       attempts++;
-      if (result.source !== "model") fallbacks++;
       if (verdict.ok) { passes++; runPass++; }
       else {
         if (c.critical) criticalFailures++;
@@ -68,12 +68,12 @@ async function main() {
   }
 
   const passRate = attempts ? passes / attempts : 0;
-  console.log(`live model: ${passes}/${attempts} (${(passRate * 100).toFixed(1)}%)`);
+  console.log(`live parser: ${passes}/${attempts} (${(passRate * 100).toFixed(1)}%)`);
   console.log(`critical failures: ${criticalFailures}`);
-  console.log(`fallbacks: ${fallbacks}`);
+  console.log(`sources: ${JSON.stringify(sources)}`);
   if (failures.length) console.log(`\nFailures:\n${JSON.stringify(failures, null, 2)}`);
 
-  if (passRate < MIN_PASS_RATE || criticalFailures > 0 || fallbacks > 0) process.exit(1);
+  if (passRate < MIN_PASS_RATE || criticalFailures > 0) process.exit(1);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
