@@ -78,23 +78,23 @@ function parseFresh(query: string): ParsedScreen {
   const assumptions: string[] = [];
   let ranking = "marketCap";
 
-  addRange(out, "pe", q.match(/(?:p\/?e|price.?to.?earnings)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
-  addRange(out, "pb", q.match(/(?:p\/?b|price.?to.?book)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
-  addRange(out, "ps", q.match(/(?:p\/?s|price.?to.?sales)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
-  addRange(out, "beta", q.match(/beta[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
+  addRange(out, "pe", q.match(/(?:\bp\/?e\b|price.?to.?earnings)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
+  addRange(out, "pb", q.match(/(?:\bp\/?b\b|price.?to.?book)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
+  addRange(out, "ps", q.match(/(?:\bp\/?s\b|price.?to.?sales)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
+  addRange(out, "beta", q.match(/\bbeta\b[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
   addRange(out, "marketCap", q.match(/market\s*cap[^\d-]*between\s*\$?(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*\$?(-?\d+(?:\.\d+)?)/));
   addRange(out, "revGrowth", q.match(/(?:revenue growth|growth)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
   addRange(out, "divYield", q.match(/(?:dividend yield|yield(?:ing)?)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
-  addRange(out, "rsi", q.match(/rsi[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
+  addRange(out, "rsi", q.match(/\brsi\b[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
 
-  if (!out.some((f) => f.field === "pe")) addThreshold(out, "pe", q.match(/(?:p\/?e|price.?to.?earnings)[^\d-]*(under|below|less than|lower than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*\$?(-?\d+(?:\.\d+)?)/));
-  if (!out.some((f) => f.field === "pb")) addThreshold(out, "pb", q.match(/(?:p\/?b|price.?to.?book)[^\d-]*(under|below|less than|lower than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*\$?(-?\d+(?:\.\d+)?)/));
-  if (!out.some((f) => f.field === "ps")) addThreshold(out, "ps", q.match(/(?:p\/?s|price.?to.?sales)[^\d-]*(under|below|less than|lower than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*\$?(-?\d+(?:\.\d+)?)/));
-  if (!out.some((f) => f.field === "divYield")) addThreshold(out, "divYield", q.match(/(?:dividend yield|yield(?:ing)?)[^\d-]*(under|below|less than|at most|<=|<|over|above|greater than|more than|at least|>=|>)?\s*(-?\d+(?:\.\d+)?)/));
-  if (!out.some((f) => f.field === "beta")) addThreshold(out, "beta", q.match(/beta[^\d-]*(under|below|less than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*(-?\d+(?:\.\d+)?)/));
+  if (!out.some((f) => f.field === "pe")) addThreshold(out, "pe", q.match(/(?:\bp\/?e\b|price.?to.?earnings)[^\d-]*(under|below|less than|lower than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*\$?(-?\d+(?:\.\d+)?)/));
+  if (!out.some((f) => f.field === "pb")) addThreshold(out, "pb", q.match(/(?:\bp\/?b\b|price.?to.?book)[^\d-]*(under|below|less than|lower than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*\$?(-?\d+(?:\.\d+)?)/));
+  if (!out.some((f) => f.field === "ps")) addThreshold(out, "ps", q.match(/(?:\bp\/?s\b|price.?to.?sales)[^\d-]*(under|below|less than|lower than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*\$?(-?\d+(?:\.\d+)?)/));
+  if (!out.some((f) => f.field === "divYield")) addThreshold(out, "divYield", q.match(/(?:dividend yield|yield(?:ing)?)\s*(?:(under|below|less than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*)?(-?\d+(?:\.\d+)?)/));
+  if (!out.some((f) => f.field === "beta")) addThreshold(out, "beta", q.match(/\bbeta\b[^\d-]*(under|below|less than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*(-?\d+(?:\.\d+)?)/));
   if (!out.some((f) => f.field === "marketCap")) addThreshold(out, "marketCap", q.match(/market\s*cap[^\d-]*(under|below|less than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*\$?(-?\d+(?:\.\d+)?)/));
   if (!out.some((f) => f.field === "revGrowth")) addThreshold(out, "revGrowth", q.match(/(?:revenue growth|growing revenue|grow(?:ing)? revenue|growth)[^\d-]*(under|below|less than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*(-?\d+(?:\.\d+)?)/));
-  if (!out.some((f) => f.field === "rsi")) addThreshold(out, "rsi", q.match(/rsi[^\d-]*(under|below|less than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*(-?\d+(?:\.\d+)?)/));
+  if (!out.some((f) => f.field === "rsi")) addThreshold(out, "rsi", q.match(/\brsi\b[^\d-]*(under|below|less than|at most|<=|<|over|above|greater than|more than|at least|>=|>)\s*(-?\d+(?:\.\d+)?)/));
 
   const positiveGrowth = /positive revenue growth|revenue (?:is )?growing|still growing revenue/.test(q);
   if (positiveGrowth && !out.some((f) => f.field === "revGrowth")) addUnique(out, mk("revGrowth", ">", 0));
@@ -114,7 +114,7 @@ function parseFresh(query: string): ParsedScreen {
     if (/cheap|value|undervalued/.test(q) && !out.some((f) => f.field === "pb")) addUnique(out, mk("pb", "<", 4));
     ranking = "value";
   }
-  if (/dividend|income|payout|highest yield/.test(q)) {
+  if (/dividend|income|payout|high[- ]?yield|highest yield/.test(q)) {
     if (!out.some((f) => f.field === "divYield") && !/highest yield/.test(q)) addUnique(out, mk("divYield", ">", 3));
     ranking = "dividend";
   }
