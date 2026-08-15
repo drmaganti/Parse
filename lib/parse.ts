@@ -141,6 +141,6 @@ export async function parseQuery(
       source: "model",
     };
   } catch {
-    return { ...fallbackParse(query, isRefine ? prev : [], [], currentRanking), source: "fallback" };
+    return { ...fallbackParse(query, isRefine ? prev : [], [], currentRanking, isRefine), source: "fallback" };
   }
 }
