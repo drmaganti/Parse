@@ -31,12 +31,13 @@ function buildNewSystem(): string {
   ].join(" ");
 }
 
-function buildRefineSystem(previous: Filter[]): string {
+function buildRefineSystem(previous: Filter[], currentRanking: string): string {
   return [
     "You update an existing stock screen from one short user instruction. This is NOT a conversation and you must not regenerate unrelated criteria.",
     `Only use these filter fields: ${vocab()}.`,
     "Numeric operators: <, <=, >, >=, ==. Categorical sector operators: == and !=.",
     `Current filters: ${JSON.stringify(previous.map(({ field, op, value, source }) => ({ field, op, value, source })))}.`,
+    `Current ranking: ${currentRanking}.`,
     "Return only changes as actions. Allowed action types: add, remove, replace.",
     "Use add for a new criterion. Keep every unrelated existing filter exactly as-is.",
     "Use remove only when the user explicitly asks to remove/drop/delete a criterion. A remove action may specify only field to remove all conditions on that metric.",
@@ -104,20 +105,22 @@ function coerceActions(rawActions: any[]): RefinementAction[] {
 export async function parseQuery(
   query: string,
   prev: Filter[] = [],
-  _lockedIds: string[] = []
+  _lockedIds: string[] = [],
+  currentRanking = "marketCap"
 ): Promise<ParseResult> {
   const isRefine = prev.length > 0;
   try {
-    const rawText = await complete({ system: isRefine ? buildRefineSystem(prev) : buildNewSystem(), user: query });
+    const rawText = await complete({ system: isRefine ? buildRefineSystem(prev, currentRanking) : buildNewSystem(), user: query });
     const parsed = extractJson(rawText);
 
     if (isRefine) {
       const actions = coerceActions(parsed.actions);
-      if (!actions.length && !validRanking(parsed.ranking)) throw new Error("no valid refinement actions");
+      const nextRanking = validRanking(parsed.ranking) ?? currentRanking;
+      if (!actions.length && nextRanking === currentRanking) throw new Error("no valid refinement actions");
       const filters = applyRefinement(prev, actions, "ai");
       return {
         filters,
-        ranking: validRanking(parsed.ranking) ?? "marketCap",
+        ranking: nextRanking,
         interpretation: typeof parsed.interpretation === "string" ? parsed.interpretation : "Updated the screen.",
         assumptions: Array.isArray(parsed.assumptions) ? parsed.assumptions.filter((a: any) => typeof a === "string") : [],
         actions,
@@ -135,6 +138,6 @@ export async function parseQuery(
       source: "model",
     };
   } catch {
-    return { ...fallbackParse(query, prev), source: "fallback" };
+    return { ...fallbackParse(query, prev, [], currentRanking), source: "fallback" };
   }
 }
