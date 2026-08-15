@@ -1,12 +1,78 @@
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:wdth,wght@75..100,400..700&family=Inter:wght@400;450;500;550;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  /* Parse design system — typography */
+  --font-display: 'Instrument Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-body: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Parse design system — color */
+  --color-bg: #F4F5F7;
+  --color-surface: #FFFFFF;
+  --color-surface-alt: #FAFBFC;
+  --color-border: #E6E8EC;
+  --color-border-strong: #D4D8DF;
+  --color-ink: #15171C;
+  --color-ink-soft: #565C67;
+  --color-ink-faint: #68707D;
+  --color-accent: #2C36A8;
+  --color-accent-soft: #ECEEFA;
+  --color-accent-ink: #232A85;
+  --color-gain: #0B8A5B;
+  --color-loss: #C33328;
+
+  /* Parse design system — spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* Parse design system — shape */
+  --radius-sm: 7px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 16px;
+
+  /* Parse design system — type scale */
+  --text-xs: 12px;
+  --text-sm: 13.5px;
+  --text-body: 15px;
+  --text-lg: 17px;
+  --text-h3: 21px;
+  --text-h2: 28px;
+  --text-h1: clamp(40px, 5vw, 56px);
+}
 
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {
-  background: #F4F5F7;
-  color: #15171C;
-  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Display typography. The migration selector keeps legacy inline Space Grotesk
+   declarations on existing surfaces aligned with the design system until those
+   local tokens are removed during normal component maintenance. */
+h1, h2, h3, h4, h5, h6,
+.disp,
+[style*="Space Grotesk"] {
+  font-family: var(--font-display) !important;
+  font-optical-sizing: auto;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  text-wrap: balance;
+}
+
+code, pre, .mono {
+  font-family: var(--font-mono);
 }
 
 /* Keep the animated homepage demo on a fixed, isolated footprint so scene
@@ -27,10 +93,10 @@ body {
    Raise those small-text uses to WCAG-AA contrast without changing layout. */
 .scr-root [style*="#969CA7"],
 .scr-root [style*="rgb(150, 156, 167)"] {
-  color: #68707D !important;
+  color: var(--color-ink-faint) !important;
 }
 .scr-root .ph-loop {
-  color: #68707D !important;
+  color: var(--color-ink-faint) !important;
 }
 
 /* The legacy signed-in navigation now points through the /about redirect.
