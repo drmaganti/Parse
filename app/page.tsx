@@ -7,6 +7,8 @@ import FeedbackButton from "../components/FeedbackButton";
 import { FIELDS, RANKINGS, SECTORS, type Filter, type StockRow } from "../lib/fields";
 import { findFilterConflict, mergeDefaults, sameFilter } from "../lib/filter-ops";
 import { runScreen, type ScreenResult } from "../lib/screen";
+import { screenFingerprint, screenSlug } from "../lib/screen-state";
+import { trackEvent } from "../lib/analytics";
 
 const T = {
   bg: "#F4F5F7", surface: "#FFFFFF", surfaceAlt: "#FAFBFC",
@@ -29,7 +31,7 @@ const EXAMPLES = [
 ];
 
 interface UserState { id: string; email: string; metadata: Record<string, any>; }
-interface SavedRow { id: string; name: string; query: string; filters: Filter[]; ranking: string; }
+interface SavedRow { id: string; name: string; query: string; filters: Filter[]; ranking: string; createdAt?: string; updatedAt?: string; lastRunAt?: string | null; lastResultCount?: number | null; lastResultSymbols: string[]; criteriaFingerprint?: string | null; universe: string; }
 interface PreferenceRow { id: string; field: string; op: Filter["op"]; value: number | string; }
 
 function readPreferences(metadata: Record<string, any> | undefined): PreferenceRow[] {
@@ -108,6 +110,7 @@ function Screener({ user }: { user: UserState }) {
   const [loading, setLoading] = useState(false);
   const [hasRun, setHasRun] = useState(false);
   const [saved, setSaved] = useState<SavedRow[]>([]);
+  const [activeSavedId, setActiveSavedId] = useState<string | null>(null);
   const [preferences, setPreferences] = useState<PreferenceRow[]>(() => readPreferences(user.metadata));
   const [toast, setToast] = useState("");
   const [dataErr, setDataErr] = useState("");
@@ -139,7 +142,7 @@ function Screener({ user }: { user: UserState }) {
       const rows = (stockData ?? []) as any[];
       setStocks(rows as StockRow[]); stocksRef.current = rows as StockRow[];
       setDataAsOf(rows.reduce((m, r) => (r.updated_at && r.updated_at > m ? r.updated_at : m), ""));
-      if (sv) setSaved(sv.map((r: any) => ({ id: r.id, name: r.name, query: r.query, filters: r.filters, ranking: r.ranking })));
+      if (sv) setSaved(sv.map((r: any) => ({ id: r.id, name: r.name, query: r.query, filters: r.filters, ranking: r.ranking, createdAt: r.created_at, updatedAt: r.updated_at, lastRunAt: r.last_run_at, lastResultCount: r.last_result_count, lastResultSymbols: r.last_result_symbols || [], criteriaFingerprint: r.criteria_fingerprint, universe: r.universe || "default" })));
 
       const s = new URLSearchParams(window.location.search).get("s");
       const dec = s ? decodeScreen(s) : null;
@@ -197,7 +200,7 @@ function Screener({ user }: { user: UserState }) {
 
   const resetScreen = () => {
     setInput(""); setScreenQuery(""); setFilters([]); setRanking("marketCap"); setInterp(""); setAssumptions([]);
-    setResults([]); setSort(null); setShowAll(false); setHasRun(false); setConflict("");
+    setResults([]); setSort(null); setShowAll(false); setHasRun(false); setConflict(""); setActiveSavedId(null);
     window.history.pushState({}, "", window.location.pathname);
   };
 
@@ -272,22 +275,61 @@ function Screener({ user }: { user: UserState }) {
 
   const saveScreen = async () => {
     if (!hasRun) return flash("Build a screen first, then save it.");
-    const name = screenQuery.trim().slice(0, 60) || "Untitled screen";
-    const { data, error } = await supabase.from("saved_screens").insert({ user_id: user.id, name, query: screenQuery, filters, ranking }).select().single();
+    const existing = activeSavedId ? saved.find((s) => s.id === activeSavedId) : undefined;
+    const name = existing?.name || screenQuery.trim().slice(0, 60) || "Untitled screen";
+    const now = new Date().toISOString();
+    const symbols = results.map((r) => r.symbol);
+    const fingerprint = screenFingerprint(filters, ranking);
+    const payload = { name, query: screenQuery, filters, ranking, updated_at: now, last_run_at: now, last_result_count: symbols.length, last_result_symbols: symbols, last_added_symbols: [], last_removed_symbols: [], criteria_fingerprint: fingerprint, universe: "default" };
+    if (activeSavedId) {
+      const { data, error } = await supabase.from("saved_screens").update(payload).eq("id", activeSavedId).select().single();
+      if (error) return flash("Could not update the saved screen.");
+      setSaved((prev) => prev.map((s) => s.id === activeSavedId ? { ...s, name: data.name, query: data.query, filters: data.filters, ranking: data.ranking, updatedAt: data.updated_at, lastRunAt: data.last_run_at, lastResultCount: data.last_result_count, lastResultSymbols: data.last_result_symbols || [], criteriaFingerprint: data.criteria_fingerprint, universe: data.universe || "default" } : s));
+      flash("Saved screen updated."); trackEvent("saved_screen_updated", { result_count: symbols.length });
+      return;
+    }
+    const { data, error } = await supabase.from("saved_screens").insert({ user_id: user.id, ...payload }).select().single();
     if (error) return flash("Could not save the screen.");
-    setSaved((prev) => [{ id: data.id, name, query: screenQuery, filters, ranking }, ...prev]);
-    flash("Screen saved.");
+    const row: SavedRow = { id: data.id, name: data.name, query: data.query, filters: data.filters, ranking: data.ranking, createdAt: data.created_at, updatedAt: data.updated_at, lastRunAt: data.last_run_at, lastResultCount: data.last_result_count, lastResultSymbols: data.last_result_symbols || [], criteriaFingerprint: data.criteria_fingerprint, universe: data.universe || "default" };
+    setSaved((prev) => [row, ...prev]); setActiveSavedId(data.id); flash("Screen saved."); trackEvent("saved_screen_created", { result_count: symbols.length });
   };
 
-  const loadScreen = (rec: SavedRow) => {
-    setScreenQuery(rec.query || rec.name); setInput(""); setAssumptions([]);
+  const loadScreen = async (rec: SavedRow) => {
+    setScreenQuery(rec.query || rec.name); setInput(""); setAssumptions([]); setActiveSavedId(rec.id);
     const issue = findFilterConflict(rec.filters); setConflict(issue || "");
+    const nextResults = issue ? [] : runScreen(stocks, rec.filters, rec.ranking, Infinity);
     setFilters(rec.filters); setRanking(rec.ranking); setInterp("Loaded a saved screen.");
-    setResults(issue ? [] : runScreen(stocks, rec.filters, rec.ranking, Infinity)); setHasRun(true); setSort(null); setShowAll(false);
-    syncUrl(rec.query || rec.name, rec.filters, rec.ranking, true);
+    setResults(nextResults); setHasRun(true); setSort(null); setShowAll(false); syncUrl(rec.query || rec.name, rec.filters, rec.ranking, true);
+    const symbols = nextResults.map((r) => r.symbol);
+    const fingerprint = screenFingerprint(rec.filters, rec.ranking, rec.universe || "default");
+    const comparable = rec.criteriaFingerprint === fingerprint && rec.lastResultSymbols.length > 0;
+    const prior = new Set(rec.lastResultSymbols); const current = new Set(symbols);
+    const added = comparable ? symbols.filter((s) => !prior.has(s)) : [];
+    const removed = comparable ? rec.lastResultSymbols.filter((s) => !current.has(s)) : [];
+    const now = new Date().toISOString();
+    const { data } = await supabase.from("saved_screens").update({ last_run_at: now, last_result_count: symbols.length, last_result_symbols: symbols, last_added_symbols: added, last_removed_symbols: removed, criteria_fingerprint: fingerprint, updated_at: now }).eq("id", rec.id).select().single();
+    if (data) setSaved((prev) => prev.map((s) => s.id === rec.id ? { ...s, lastRunAt: data.last_run_at, lastResultCount: data.last_result_count, lastResultSymbols: data.last_result_symbols || [], criteriaFingerprint: data.criteria_fingerprint, updatedAt: data.updated_at } : s));
+    trackEvent("saved_screen_run", { result_count: symbols.length, change_count: added.length + removed.length });
   };
-  const deleteScreen = async (id: string) => { await supabase.from("saved_screens").delete().eq("id", id); setSaved((prev) => prev.filter((s) => s.id !== id)); };
-  const shareLink = async () => { try { await navigator.clipboard.writeText(window.location.href); flash("Link copied."); } catch { flash("Copy failed. The screen is in the address bar."); } };
+  const renameScreen = async (rec: SavedRow) => {
+    const next = window.prompt("Rename saved screen", rec.name)?.trim().slice(0, 80);
+    if (!next || next === rec.name) return;
+    const { error } = await supabase.from("saved_screens").update({ name: next, updated_at: new Date().toISOString() }).eq("id", rec.id);
+    if (error) return flash("Could not rename the screen.");
+    setSaved((prev) => prev.map((s) => s.id === rec.id ? { ...s, name: next } : s)); flash("Screen renamed.");
+  };
+  const deleteScreen = async (id: string) => { await supabase.from("saved_screens").delete().eq("id", id); setSaved((prev) => prev.filter((s) => s.id !== id)); if (activeSavedId === id) setActiveSavedId(null); };
+  const createSharedScreen = async (visibility: "unlisted" | "public") => {
+    if (!hasRun) return;
+    const title = saved.find((s) => s.id === activeSavedId)?.name || screenQuery.trim().slice(0, 80) || "Stock screen";
+    const slug = `${screenSlug(title)}-${(globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)).slice(0, 8)}`;
+    const { error } = await supabase.from("shared_screens").insert({ owner_id: user.id, source_saved_screen_id: activeSavedId, slug, title, query: screenQuery, filters, ranking, universe: "default", visibility });
+    if (error) return flash("Could not create the shared screen.");
+    const url = `${window.location.origin}/s/${slug}`;
+    try { await navigator.clipboard.writeText(url); } catch {}
+    flash(visibility === "public" ? "Published. Public link copied." : "Exact link copied.");
+    trackEvent(visibility === "public" ? "screen_published" : "screen_shared", { method: "persistent_link", filter_count: filters.length });
+  };
 
   return <div className="scr-root">
     <TopBar email={user.email} onSignOut={() => supabase.auth.signOut()} />
@@ -305,9 +347,9 @@ function Screener({ user }: { user: UserState }) {
         onSaveDefault={saveDefault} preferencesReady={preferencesReady} /></section>}
 
       {hasRun && !conflict && <section style={{ marginTop: 22 }}><Results rows={displayed} total={total} filters={filters} ranking={ranking} sort={sort} onSort={toggleSort}
-        showAll={showAll} onToggleShowAll={() => setShowAll((v) => !v)} dataAsOf={dataAsOf} onSave={saveScreen} onShare={shareLink} /></section>}
+        showAll={showAll} onToggleShowAll={() => setShowAll((v) => !v)} dataAsOf={dataAsOf} onSave={saveScreen} saveLabel={activeSavedId ? "Update saved screen" : "Save screen"} onShare={() => createSharedScreen("unlisted")} onPublish={() => createSharedScreen("public")} /></section>}
 
-      <section style={{ marginTop: 30 }}><Saved saved={saved} onLoad={loadScreen} onDelete={deleteScreen} /></section>
+      <section style={{ marginTop: 30 }}><Saved saved={saved} onLoad={loadScreen} onDelete={deleteScreen} onRename={renameScreen} /></section>
       <section style={{ marginTop: 30 }}><Preferences preferences={preferences} onDelete={deleteDefault} /></section>
     </main>
     {toast && <div style={{ position: "fixed", bottom: 22, left: "50%", transform: "translateX(-50%)", background: T.ink, color: "#fff", padding: "10px 18px", borderRadius: 10, fontSize: 14, zIndex: 50 }}>{toast}</div>}
@@ -359,13 +401,13 @@ function AddFilter({ onAdd }: { onAdd: (field: string, op: Filter["op"], value: 
   return <span style={{ display: "inline-flex", alignItems: "center", gap: 5, flexWrap: "wrap", padding: "6px 7px", borderRadius: 9, background: T.surfaceAlt, border: `1px solid ${T.borderStrong}` }}><select value={field} onChange={(e) => { const next = e.target.value; setField(next); setOp(FIELDS[next].kind === "cat" ? "==" : "<"); }} style={{ border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px" }}>{Object.values(FIELDS).map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}</select>{categorical ? <><select value={op} onChange={(e) => setOp(e.target.value as Filter["op"])} style={{ border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px" }}><option value="==">is</option><option value="!=">is not</option></select><select value={sector} onChange={(e) => setSector(e.target.value)} style={{ border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px" }}>{SECTORS.map((s) => <option key={s}>{s}</option>)}</select></> : <><select value={op} onChange={(e) => setOp(e.target.value as Filter["op"])} style={{ border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px" }}>{["<", "<=", ">", ">=", "=="].map((o) => <option key={o}>{o}</option>)}</select><input type="number" value={value} onChange={(e) => setValue(e.target.value)} placeholder={meta.unit === "%" ? "%" : "0"} onKeyDown={(e) => e.key === "Enter" && submit()} style={{ width: 68, border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px 6px" }} /></>}<button className="btn btn-primary btn-sm" onClick={submit}>Add</button><button onClick={() => setOpen(false)} style={{ background: "none", border: "none", color: T.inkFaint }}>×</button></span>;
 }
 
-function Results({ rows, total, filters, ranking, sort, onSort, showAll, onToggleShowAll, dataAsOf, onSave, onShare }: { rows: ScreenResult[]; total: number; filters: Filter[]; ranking: string; sort: { col: keyof StockRow; dir: "asc" | "desc" } | null; onSort: (c: keyof StockRow) => void; showAll: boolean; onToggleShowAll: () => void; dataAsOf: string; onSave: () => void; onShare: () => void }) {
+function Results({ rows, total, filters, ranking, sort, onSort, showAll, onToggleShowAll, dataAsOf, onSave, saveLabel, onShare, onPublish }: { rows: ScreenResult[]; total: number; filters: Filter[]; ranking: string; sort: { col: keyof StockRow; dir: "asc" | "desc" } | null; onSort: (c: keyof StockRow) => void; showAll: boolean; onToggleShowAll: () => void; dataAsOf: string; onSave: () => void; saveLabel: string; onShare: () => void; onPublish: () => void }) {
   const cols = buildColumns(filters, ranking); const activeCols = new Set(filters.map((f) => FIELDS[f.field]?.col).filter(Boolean) as string[]); const arrow = (k: keyof StockRow) => sort?.col === k ? (sort.dir === "asc" ? " ↑" : " ↓") : "";
-  return <section><div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 10 }}><div style={{ display: "flex", alignItems: "baseline", gap: 10 }}><h2 className="disp" style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Results</h2><span className="mono" style={{ fontSize: 13, color: T.inkFaint }}>{total > rows.length ? `top ${rows.length} of ${total}` : `${total} names`} · {sort ? "manual sort" : (RANKINGS[ranking]?.label.toLowerCase() || "")}</span></div><div style={{ display: "flex", gap: 8 }}><button onClick={onShare} className="btn btn-ghost btn-sm">Share</button><button onClick={onSave} className="btn btn-secondary btn-sm">Save screen</button></div></div>{rows.length === 0 ? <Empty title="No names match this screen." body="Loosen or remove a filter to widen it." /> : <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}><div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: 640 }}><thead><tr style={{ borderBottom: `1px solid ${T.border}` }}><Th style={{ textAlign: "left", paddingLeft: 16 }}>Ticker</Th><Th style={{ textAlign: "left" }}>Company</Th>{cols.map((c) => <Th key={String(c.key)} style={{ textAlign: "right" }} hot={activeCols.has(c.key as string)} onClick={() => onSort(c.key)}>{c.label}{arrow(c.key)}</Th>)}<Th style={{ textAlign: "right", paddingRight: 16 }} onClick={() => onSort("chg_1w")}>1W{arrow("chg_1w")}</Th></tr></thead><tbody>{rows.map((s) => <tr key={s.symbol} className="row-hover" style={{ borderBottom: `1px solid ${T.border}` }}><td className="mono" style={{ fontWeight: 600, padding: "11px 8px 11px 16px" }}>{s.symbol}</td><td style={{ padding: "11px 8px" }}>{s.name} <span style={{ color: T.inkFaint, fontSize: 12 }}>· {s.sector ?? "—"}</span></td>{cols.map((c) => <td key={String(c.key)} className="mono" style={{ textAlign: "right", padding: "11px 8px", color: activeCols.has(c.key as string) ? T.ink : T.inkSoft, fontWeight: activeCols.has(c.key as string) ? 600 : 400 }}>{c.fmt(s[c.key])}</td>)}<td className="mono" style={{ textAlign: "right", padding: "11px 16px 11px 8px", color: (s.chg_1w ?? 0) >= 0 ? T.gain : T.loss }}>{s.chg_1w == null ? "—" : `${s.chg_1w >= 0 ? "+" : ""}${s.chg_1w.toFixed(1)}%`}</td></tr>)}</tbody></table></div>{total > 25 && <button onClick={onToggleShowAll} style={{ width: "100%", padding: "11px 16px", background: T.surfaceAlt, border: "none", borderTop: `1px solid ${T.border}`, fontSize: 13, fontWeight: 550, color: T.accent }}>{showAll ? "Show top 25" : `Show all ${total}`}</button>}<div style={{ padding: "10px 16px", borderTop: `1px solid ${T.border}`, fontSize: 12, color: T.inkFaint }}>Daily-refreshed data{dataAsOf ? ` · as of ${formatAsOf(dataAsOf)}` : ""} · S&amp;P 500 and Nasdaq 100</div></div>}</section>;
+  return <section><div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 10 }}><div style={{ display: "flex", alignItems: "baseline", gap: 10 }}><h2 className="disp" style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Results</h2><span className="mono" style={{ fontSize: 13, color: T.inkFaint }}>{total > rows.length ? `top ${rows.length} of ${total}` : `${total} names`} · {sort ? "manual sort" : (RANKINGS[ranking]?.label.toLowerCase() || "")}</span></div><div style={{ display: "flex", gap: 8 }}><button onClick={onShare} className="btn btn-ghost btn-sm">Share</button><button onClick={onPublish} className="btn btn-ghost btn-sm">Publish</button><button onClick={onSave} className="btn btn-secondary btn-sm">{saveLabel}</button></div></div>{rows.length === 0 ? <Empty title="No names match this screen." body="Loosen or remove a filter to widen it." /> : <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}><div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: 640 }}><thead><tr style={{ borderBottom: `1px solid ${T.border}` }}><Th style={{ textAlign: "left", paddingLeft: 16 }}>Ticker</Th><Th style={{ textAlign: "left" }}>Company</Th>{cols.map((c) => <Th key={String(c.key)} style={{ textAlign: "right" }} hot={activeCols.has(c.key as string)} onClick={() => onSort(c.key)}>{c.label}{arrow(c.key)}</Th>)}<Th style={{ textAlign: "right", paddingRight: 16 }} onClick={() => onSort("chg_1w")}>1W{arrow("chg_1w")}</Th></tr></thead><tbody>{rows.map((s) => <tr key={s.symbol} className="row-hover" style={{ borderBottom: `1px solid ${T.border}` }}><td className="mono" style={{ fontWeight: 600, padding: "11px 8px 11px 16px" }}>{s.symbol}</td><td style={{ padding: "11px 8px" }}>{s.name} <span style={{ color: T.inkFaint, fontSize: 12 }}>· {s.sector ?? "—"}</span></td>{cols.map((c) => <td key={String(c.key)} className="mono" style={{ textAlign: "right", padding: "11px 8px", color: activeCols.has(c.key as string) ? T.ink : T.inkSoft, fontWeight: activeCols.has(c.key as string) ? 600 : 400 }}>{c.fmt(s[c.key])}</td>)}<td className="mono" style={{ textAlign: "right", padding: "11px 16px 11px 8px", color: (s.chg_1w ?? 0) >= 0 ? T.gain : T.loss }}>{s.chg_1w == null ? "—" : `${s.chg_1w >= 0 ? "+" : ""}${s.chg_1w.toFixed(1)}%`}</td></tr>)}</tbody></table></div>{total > 25 && <button onClick={onToggleShowAll} style={{ width: "100%", padding: "11px 16px", background: T.surfaceAlt, border: "none", borderTop: `1px solid ${T.border}`, fontSize: 13, fontWeight: 550, color: T.accent }}>{showAll ? "Show top 25" : `Show all ${total}`}</button>}<div style={{ padding: "10px 16px", borderTop: `1px solid ${T.border}`, fontSize: 12, color: T.inkFaint }}>Daily-refreshed data{dataAsOf ? ` · as of ${formatAsOf(dataAsOf)}` : ""} · S&amp;P 500 and Nasdaq 100</div></div>}</section>;
 }
 
-function Saved({ saved, onLoad, onDelete }: { saved: SavedRow[]; onLoad: (s: SavedRow) => void; onDelete: (id: string) => void }) {
-  return <section><h2 className="disp" style={{ fontSize: 18, fontWeight: 600, margin: "0 0 12px" }}>Saved screens</h2>{saved.length === 0 ? <Empty title="No saved screens yet." body="Build one above, then save it to run it again anytime." /> : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 12 }}>{saved.map((s) => <div key={s.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 15px", display: "flex", flexDirection: "column", gap: 10 }}><div style={{ fontSize: 14, fontWeight: 550 }}>{s.name}</div><div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>{s.filters.slice(0, 3).map((f) => <span key={f.id} className="mono" style={{ fontSize: 11.5, padding: "3px 7px", borderRadius: 6, background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.inkSoft }}>{formatFilter(f)}</span>)}{s.filters.length > 3 && <span style={{ fontSize: 11.5, color: T.inkFaint }}>+{s.filters.length - 3}</span>}</div><div style={{ display: "flex", gap: 8, marginTop: "auto" }}><button className="btn btn-primary btn-sm" onClick={() => onLoad(s)} style={{ flex: 1 }}>Run</button><button className="btn btn-neutral btn-sm" onClick={() => onDelete(s.id)}>Delete</button></div></div>)}</div>}</section>;
+function Saved({ saved, onLoad, onDelete, onRename }: { saved: SavedRow[]; onLoad: (s: SavedRow) => void; onDelete: (id: string) => void; onRename: (s: SavedRow) => void }) {
+  return <section><h2 className="disp" style={{ fontSize: 18, fontWeight: 600, margin: "0 0 12px" }}>Saved screens</h2>{saved.length === 0 ? <Empty title="No saved screens yet." body="Build one above, then save it to run it again anytime." /> : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 12 }}>{saved.map((s) => <div key={s.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 15px", display: "flex", flexDirection: "column", gap: 10 }}><div style={{ fontSize: 14, fontWeight: 550 }}>{s.name}</div><div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>{s.filters.slice(0, 3).map((f) => <span key={f.id} className="mono" style={{ fontSize: 11.5, padding: "3px 7px", borderRadius: 6, background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.inkSoft }}>{formatFilter(f)}</span>)}{s.filters.length > 3 && <span style={{ fontSize: 11.5, color: T.inkFaint }}>+{s.filters.length - 3}</span>}</div><div style={{ fontSize: 11.5, color: T.inkFaint }}>{s.lastResultCount == null ? "No baseline yet" : `${s.lastResultCount} matches`}{s.lastRunAt ? ` · Last run ${formatAsOf(s.lastRunAt)}` : ""}</div><div style={{ display: "flex", gap: 8, marginTop: "auto" }}><button className="btn btn-primary btn-sm" onClick={() => onLoad(s)} style={{ flex: 1 }}>Run</button><button className="btn btn-neutral btn-sm" onClick={() => onRename(s)}>Rename</button><button className="btn btn-neutral btn-sm" onClick={() => onDelete(s.id)}>Delete</button></div></div>)}</div>}</section>;
 }
 
 function Preferences({ preferences, onDelete }: { preferences: PreferenceRow[]; onDelete: (id: string) => void }) {
