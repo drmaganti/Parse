@@ -1,0 +1,44 @@
+name: verify-live-p1-routes
+
+on:
+  push:
+    branches: [agent/verify-live-p1-routes]
+    paths:
+      - ".github/workflows/verify-live-p1-routes.yml"
+  workflow_dispatch: {}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify production P1 routes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          fetch() {
+            local url="$1"
+            local out="$2"
+            echo "GET $url"
+            code=$(curl -sS -L --retry 3 --retry-all-errors -o "$out" -w '%{http_code}' "$url")
+            echo "HTTP $code; bytes $(wc -c < "$out")"
+            test "$code" = "200"
+          }
+
+          fetch "https://getparse.app/investors/warren-buffett" buffett.html
+          grep -Fq "Warren Buffett stocks: Berkshire Hathaway portfolio &amp; holdings" buffett.html || grep -Fq "Warren Buffett stocks: Berkshire Hathaway portfolio & holdings" buffett.html
+          grep -Fq "29 disclosed positions" buffett.html
+          grep -Fq "AAPL" buffett.html
+          grep -Fq "COF" buffett.html
+          grep -Fq "NYT" buffett.html
+          echo "BUFFETT_PAGE: PASS"
+
+          fetch "https://getparse.app/investors" investors.html
+          grep -Fq "Warren Buffett" investors.html
+          echo "INVESTOR_HUB: PASS"
+
+          fetch "https://getparse.app/sitemap.xml" sitemap.xml
+          grep -Fq "https://getparse.app/investors/warren-buffett" sitemap.xml
+          echo "SITEMAP: PASS"
+
+          echo "LIVE_P1_ROUTES: PASS"
