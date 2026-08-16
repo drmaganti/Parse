@@ -1,0 +1,29 @@
+name: investor-holdings
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "20 13 * * 1-5"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/ingest-investor-holdings.ts"
+      - "lib/investorCollections.ts"
+      - ".github/workflows/investor-holdings.yml"
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Refresh investor holdings from SEC
+        run: npm run ingest:investors
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SEC_USER_AGENT: Parse/1.0 (+https://getparse.app)
