@@ -10,10 +10,10 @@ const T = { bg: "#F4F5F7", surface: "#FFFFFF", border: "#E6E8EC", ink: "#15171C"
 const DISP = "var(--font-display), 'Instrument Sans', system-ui, sans-serif";
 const MONO = "var(--font-mono), 'JetBrains Mono', ui-monospace, monospace";
 
-type Shared = { slug: string; title: string; query: string | null; filters: Filter[]; ranking: string; universe: string; visibility: "unlisted" | "public"; created_at: string };
+type Shared = { slug: string; title: string; query: string | null; filters: Filter[]; ranking: string; universe: string; visibility: "unlisted" | "public"; is_indexable: boolean; created_at: string };
 
 async function loadScreen(slug: string): Promise<Shared | null> {
-  const { data } = await supabaseServer.from("shared_screens").select("slug,title,query,filters,ranking,universe,visibility,created_at").eq("slug", slug).maybeSingle();
+  const { data } = await supabaseServer.from("shared_screens").select("slug,title,query,filters,ranking,universe,visibility,is_indexable,created_at").eq("slug", slug).maybeSingle();
   return data as Shared | null;
 }
 
@@ -23,11 +23,12 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   const title = `${screen.title} | Parse`;
   const description = screen.query ? `Run and edit this exact stock screen in Parse: ${screen.query.slice(0, 150)}` : `Run and edit ${screen.title} in Parse.`;
   const image = `/api/og?title=${encodeURIComponent(screen.title)}&subtitle=${encodeURIComponent("See the exact filters, current matches, and make the screen your own")}`;
+  const indexable = screen.visibility === "public" && screen.is_indexable;
   return {
     title,
     description,
     alternates: screen.visibility === "public" ? { canonical: `/s/${screen.slug}` } : undefined,
-    robots: { index: screen.visibility === "public", follow: true },
+    robots: { index: indexable, follow: true },
     openGraph: { title, description, type: "website", url: `/s/${screen.slug}`, images: [{ url: image, width: 1200, height: 630 }] },
     twitter: { card: "summary_large_image", title, description, images: [image] },
   };
