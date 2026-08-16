@@ -64,7 +64,7 @@ export default function Page() {
 
   if (booting) return <div style={{ minHeight: "100vh", background: T.bg }} />;
   if (user) return <><BaseStyle /><Screener user={user} /></>;
-  return <Landing mode="home" onGetStarted={() => { window.location.href = "/account?mode=signup"; }} />;
+  return <Landing key="home-investors-v1" mode="home" onGetStarted={() => { window.location.href = "/account?mode=signup"; }} />;
 }
 
 function BaseStyle() {
