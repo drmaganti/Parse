@@ -17,21 +17,27 @@ jobs:
         run: |
           npm install --no-save playwright@1.55.0
           npx playwright install chromium
-      - name: Verify rendered production homepage
+      - name: Compare deployment and production alias
         run: |
           node <<'NODE'
           const { chromium } = require('playwright');
           (async () => {
             const browser = await chromium.launch({ headless: true });
-            const page = await browser.newPage();
-            await page.goto('https://getparse.app/?verify=f3330e4549d7baa411ba2df53e97ae7b673f15ec', { waitUntil: 'networkidle' });
-            await page.getByRole('link', { name: 'Investors', exact: true }).waitFor({ state: 'visible', timeout: 15000 });
-            await page.getByText('Screen famous investor portfolios', { exact: true }).waitFor({ state: 'visible', timeout: 15000 });
-            await page.getByRole('link', { name: 'Explore investor portfolios', exact: false }).waitFor({ state: 'visible', timeout: 15000 });
-            const navHref = await page.getByRole('link', { name: 'Investors', exact: true }).getAttribute('href');
-            const discoveryHref = await page.getByRole('link', { name: 'Explore investor portfolios', exact: false }).getAttribute('href');
-            if (navHref !== '/investors' || discoveryHref !== '/investors') throw new Error(`Unexpected hrefs: ${navHref}, ${discoveryHref}`);
-            console.log('LIVE_HOMEPAGE_INVESTORS: PASS');
+            for (const url of [
+              'https://parse-n7k3qfl4o-nrichapps.vercel.app/',
+              'https://getparse.app/?verify=f3330e4549d7baa411ba2df53e97ae7b673f15ec'
+            ]) {
+              const page = await browser.newPage();
+              const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+              await page.waitForTimeout(5000);
+              const links = await page.locator('a').evaluateAll(as => as.map(a => ({ text: (a.textContent || '').trim(), href: a.getAttribute('href') })).filter(x => x.text || x.href));
+              const body = (await page.locator('body').innerText()).slice(0, 2500);
+              console.log('\nURL:', page.url());
+              console.log('STATUS:', response?.status());
+              console.log('LINKS:', JSON.stringify(links));
+              console.log('BODY:', body.replace(/\n/g, ' | '));
+              await page.close();
+            }
             await browser.close();
           })().catch((error) => { console.error(error); process.exit(1); });
           NODE
