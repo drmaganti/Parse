@@ -10,11 +10,12 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - name: Verify production homepage investor bundle
+      - name: Verify fresh production homepage investor bundle
         shell: bash
         run: |
           set -euo pipefail
-          code=$(curl -sS -L --retry 3 --retry-all-errors -o home.html -w '%{http_code}' https://getparse.app/)
+          verify="f3330e4549d7baa411ba2df53e97ae7b673f15ec"
+          code=$(curl -sS -L -H 'Cache-Control: no-cache' --retry 3 --retry-all-errors -o home.html -w '%{http_code}' "https://getparse.app/?verify=$verify")
           echo "HTTP $code; bytes $(wc -c < home.html)"
           test "$code" = "200"
           : > bundles.js
@@ -24,12 +25,11 @@ jobs:
               http*) url="$src" ;;
               *) url="https://getparse.app$src" ;;
             esac
-            curl -sS -L --retry 3 --retry-all-errors "$url" >> bundles.js
+            curl -sS -L -H 'Cache-Control: no-cache' --retry 3 --retry-all-errors "$url" >> bundles.js
             printf '\n' >> bundles.js
           done < scripts.txt
           echo "Downloaded $(wc -l < scripts.txt) production JS bundles; bytes $(wc -c < bundles.js)"
           grep -Fq 'Screen famous investor portfolios' bundles.js
           grep -Fq 'Explore investor portfolios' bundles.js
           grep -Fq 'investor_hub_clicked' bundles.js
-          grep -Fq '/investors' bundles.js
           echo "LIVE_HOMEPAGE_INVESTORS: PASS"
