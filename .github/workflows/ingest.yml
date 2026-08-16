@@ -1,6 +1,12 @@
 name: nightly-ingest
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "lib/finnhub.ts"
+      - "scripts/ingest.ts"
+      - "data/universe.json"
   schedule:
     # 06:30 UTC nightly (after US market close, before morning use). Adjust as needed.
     - cron: "30 6 * * *"
