@@ -1,0 +1,41 @@
+name: rebuild-landing-module
+
+on:
+  push:
+    branches: [agent/rebuild-landing-module]
+    paths:
+      - ".github/workflows/rebuild-landing-module.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/rebuild-landing-module
+      - name: Rename landing module and remove revalidation route
+        shell: bash
+        run: |
+          set -euo pipefail
+          git mv components/Landing.tsx components/LandingV2.tsx
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('app/page.tsx')
+          s = p.read_text()
+          old = 'import Landing from "../components/Landing";'
+          new = 'import Landing from "../components/LandingV2";'
+          if old not in s:
+              raise SystemExit('Landing import not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          rm -f app/api/internal/revalidate-home/route.ts
+      - name: Commit module refresh
+        run: |
+          git config user.name "drmaganti"
+          git config user.email "ram.maganti@outlook.com"
+          git add -A
+          git commit -m "Rebuild homepage landing module"
+          git push origin HEAD:agent/rebuild-landing-module
