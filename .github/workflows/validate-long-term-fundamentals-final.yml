@@ -1,0 +1,26 @@
+name: validate-long-term-fundamentals-final
+
+on:
+  push:
+    branches: [agent/long-term-fundamentals]
+    paths:
+      - ".github/workflows/validate-long-term-fundamentals-final.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-key
+      GROQ_API_KEY: ci-placeholder-key
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/long-term-fundamentals
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run test:p0-parser
+      - run: npm run build
