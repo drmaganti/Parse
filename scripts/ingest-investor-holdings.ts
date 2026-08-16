@@ -14,7 +14,7 @@ function normalizeName(value: string) {
   return value.toUpperCase().replace(/&/g, " AND ").replace(/\b(INCORPORATED|INC|CORPORATION|CORP|COMPANY|CO|PLC|LTD|LIMITED|DEL|NEW|HOLDINGS?)\b/g, " ").replace(/[^A-Z0-9]+/g, " ").replace(/\s+/g, " ").trim();
 }
 const aliases: Record<string, string> = {
-  "APPLE": "AAPL", "AMERICAN EXPRESS": "AXP", "BK OF AMERICA": "BAC", "BANK OF AMERICA": "BAC", "COCA COLA": "KO", "CHEVRON": "CVX", "MOODYS": "MCO", "OCCIDENTAL PETROLEUM": "OXY", "CHUBB": "CB", "KRAFT HEINZ": "KHC", "DAVITA": "DVA", "VERISIGN": "VRSN", "SIRIUS XM": "SIRI", "DOMINOS PIZZA": "DPZ", "POOL": "POOL", "NVR": "NVR", "LENNAR": "LEN", "D R HORTON": "DHI", "NUCOR": "NUE", "CONSTELLATION BRANDS": "STZ", "NEW YORK TIMES": "NYT", "DELTA AIR LINES": "DAL", "MACYS": "M", "CAPITAL ONE FINANCIAL": "COF", "ALLY FINANCIAL": "ALLY", "KROGER": "KR", "AMAZON COM": "AMZN", "UNITEDHEALTH GROUP": "UNH", "HEICO": "HEI", "ALPHABET": "GOOGL",
+  "APPLE": "AAPL", "AMERICAN EXPRESS": "AXP", "BK OF AMERICA": "BAC", "BANK OF AMERICA": "BAC", "BANK OF AMER": "BAC", "COCA COLA": "KO", "CHEVRON": "CVX", "MOODYS": "MCO", "OCCIDENTAL PETROLEUM": "OXY", "OCCIDENTAL PETE": "OXY", "CHUBB": "CB", "KRAFT HEINZ": "KHC", "DAVITA": "DVA", "VERISIGN": "VRSN", "SIRIUS XM": "SIRI", "SIRIUSXM": "SIRI", "DOMINOS PIZZA": "DPZ", "POOL": "POOL", "NVR": "NVR", "LENNAR": "LEN", "D R HORTON": "DHI", "NUCOR": "NUE", "CONSTELLATION BRANDS": "STZ", "NEW YORK TIMES": "NYT", "NEW YORK TIMES MTN BE": "NYT", "DELTA AIR LINES": "DAL", "MACYS": "M", "CAPITAL ONE FINANCIAL": "COF", "ALLY FINANCIAL": "ALLY", "ALLY FINL": "ALLY", "KROGER": "KR", "AMAZON COM": "AMZN", "UNITEDHEALTH GROUP": "UNH", "HEICO": "HEI", "ALPHABET": "GOOGL", "LOUISIANA PAC": "LPX", "JEFFERIES FINANCIAL GROUP IN": "JEF",
 };
 
 async function fetchJson(url: string) { const r = await fetch(url, { headers }); if (!r.ok) throw new Error(`${r.status} ${url}`); return r.json() as Promise<any>; }
@@ -40,12 +40,26 @@ async function latest13F(cik: string) {
 
 function parseHoldings(xml: string): SecHolding[] {
   const blocks = [...xml.matchAll(/<(?:\w+:)?infoTable[^>]*>([\s\S]*?)<\/(?:\w+:)?infoTable>/gi)].map((m) => m[1]);
-  return blocks.map((block) => ({ issuer: xmlText(block, "nameOfIssuer"), titleClass: xmlText(block, "titleOfClass"), cusip: xmlText(block, "cusip"), valueUsd: Number(xmlText(block, "value") || 0) * 1000, shares: Number(xmlText(block, "sshPrnamt") || 0) || null })).filter((h) => h.issuer && h.cusip);
+  return blocks.map((block) => ({ issuer: xmlText(block, "nameOfIssuer"), titleClass: xmlText(block, "titleOfClass"), cusip: xmlText(block, "cusip"), valueUsd: Number(xmlText(block, "value") || 0), shares: Number(xmlText(block, "sshPrnamt") || 0) || null })).filter((h) => h.issuer && h.cusip);
+}
+
+function aggregateHoldings(holdings: SecHolding[]): SecHolding[] {
+  const byCusip = new Map<string, SecHolding>();
+  for (const holding of holdings) {
+    const current = byCusip.get(holding.cusip);
+    if (!current) {
+      byCusip.set(holding.cusip, { ...holding });
+      continue;
+    }
+    current.valueUsd += holding.valueUsd;
+    current.shares = current.shares == null && holding.shares == null ? null : (current.shares || 0) + (holding.shares || 0);
+  }
+  return [...byCusip.values()];
 }
 
 for (const collection of INVESTOR_COLLECTIONS) {
   const filing = await latest13F(collection.cik);
-  const current = parseHoldings(filing.xml);
+  const current = aggregateHoldings(parseHoldings(filing.xml));
   const { data: stockData } = await supabase.from("stocks").select("symbol,name");
   const stockMap = new Map((stockData || []).map((s: any) => [normalizeName(s.name), s.symbol]));
   const { data: previousRows } = await supabase.from("investor_holdings").select("cusip,shares,report_date").eq("collection_slug", collection.slug).lt("report_date", filing.reportDate).order("report_date", { ascending: false }).limit(500);
@@ -56,6 +70,7 @@ for (const collection of INVESTOR_COLLECTIONS) {
     const normalized = normalizeName(h.issuer);
     let ticker = stockMap.get(normalized) || aliases[normalized] || null;
     if (/^ALPHABET\b/.test(normalized)) ticker = /CL C|CLASS C/i.test(h.titleClass) ? "GOOG" : "GOOGL";
+    if (/^LIBERTY LIVE\b/.test(normalized)) ticker = /SER C/i.test(h.titleClass) ? "LLYVK" : "LLYVA";
     const prior = previous.get(h.cusip);
     const change = prior == null || h.shares == null ? null : h.shares - prior;
     const changePct = prior && change != null ? (change / prior) * 100 : null;
@@ -64,5 +79,5 @@ for (const collection of INVESTOR_COLLECTIONS) {
   });
   const { error } = await supabase.from("investor_holdings").upsert(rows, { onConflict: "collection_slug,report_date,cusip" });
   if (error) throw error;
-  console.log(`${collection.slug}: ${rows.length} holdings from ${filing.reportDate} (${filing.accession})`);
+  console.log(`${collection.slug}: ${rows.length} aggregated holdings from ${filing.reportDate} (${filing.accession})`);
 }
