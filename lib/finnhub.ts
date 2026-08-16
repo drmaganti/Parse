@@ -81,12 +81,14 @@ function num(v: any): number | undefined {
 }
 
 // Collapse Finnhub's fine-grained industries into the sectors our vocabulary uses.
-function mapSector(industry?: string): string | null {
+// Match healthcare before technology and use word-aware tech patterns so
+// "biotechnology" is not accidentally classified as Technology.
+export function mapSector(industry?: string): string | null {
   if (!industry) return null;
   const s = industry.toLowerCase();
-  if (/tech|software|semiconductor|hardware|it services/.test(s)) return "Technology";
-  if (/bank|financ|insur|capital markets|asset/.test(s)) return "Financials";
   if (/health|pharma|biotech|medical|life sciences/.test(s)) return "Healthcare";
+  if (/bank|financ|insur|capital markets|asset/.test(s)) return "Financials";
+  if (/\btechnology\b|\bsoftware\b|\bsemiconductors?\b|\bhardware\b|\bit services?\b|information technology/.test(s)) return "Technology";
   if (/retail|consumer|food|beverage|apparel|restaurant|auto/.test(s)) return "Consumer";
   if (/oil|gas|energy|coal/.test(s)) return "Energy";
   if (/industrial|aerospace|machinery|construction|transport|defense/.test(s)) return "Industrials";

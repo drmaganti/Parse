@@ -3,6 +3,7 @@ import { complete } from "./llm";
 import { fallbackParse, tryRuleParse, type ParsedScreen } from "./fallback-parse";
 import { applyRefinement, validRanking, type RefinementAction } from "./filter-ops";
 import { coerceActions, coerceFilters, enforceRefinementIntent, extractJsonObject } from "./parse-contract";
+import { normalizeScreenQuery } from "./query-normalize";
 
 export interface ParseResult extends ParsedScreen {
   source: "rules" | "model" | "fallback";
@@ -68,9 +69,18 @@ export async function parseQuery(
 ): Promise<ParseResult> {
   const isRefine = mode ? mode === "refine" : prev.length > 0;
   const resolvedMode: ParseMode = isRefine ? "refine" : "new";
+  const normalized = normalizeScreenQuery(query);
 
-  const rules = tryRuleParse(query, isRefine ? prev : [], currentRanking, resolvedMode);
-  if (rules) return { ...rules, source: "rules" };
+  // The rules path must understand the whole supported intent, including
+  // explicit negations and a small set of transparent fuzzy translations.
+  const rules = tryRuleParse(normalized.query, isRefine ? prev : [], currentRanking, resolvedMode);
+  if (rules) {
+    return {
+      ...rules,
+      assumptions: [...rules.assumptions, ...normalized.assumptions],
+      source: "rules",
+    };
+  }
 
   try {
     const rawText = await complete({ system: isRefine ? buildRefineSystem(prev, currentRanking) : buildNewSystem(), user: query });
@@ -103,7 +113,8 @@ export async function parseQuery(
       source: "model",
     };
   } catch {
-    const fallback = fallbackParse(query, isRefine ? prev : [], [], currentRanking, isRefine);
+    const fallback = fallbackParse(normalized.query, isRefine ? prev : [], [], currentRanking, isRefine);
+    fallback.assumptions = [...fallback.assumptions, ...normalized.assumptions];
     if (fallback.assumptions.length === 0) fallback.assumptions = ["That request includes language Parse could not confidently map to a supported criterion."];
     if (!fallback.actions?.length && isRefine) fallback.interpretation = "No supported screen change was found.";
     else if (!fallback.filters.length) fallback.interpretation = "No supported filter was found.";

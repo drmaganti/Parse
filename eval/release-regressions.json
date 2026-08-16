@@ -1,11 +1,13 @@
 {
-  "_comment": "Production failures caught by the P0.1 live gate. These must remain deterministic CI cases.",
+  "_comment": "Production failures and user-reported failures caught after P0.1. These must remain regression cases.",
   "cases": [
     {"query":"Beta no more than 1.1","expect":{"filters":[{"field":"beta","op":"<=","value":1.1}],"filterCount":1},"exactFilters":true,"critical":true},
     {"query":"Quality companies","expect":{"filterCount":0,"ranking":"marketCap"},"requireAssumptions":true,"exactFilters":true,"critical":true},
     {"query":"ROIC above 15%","expect":{"filterCount":0,"ranking":"marketCap"},"requireAssumptions":true,"exactFilters":true,"critical":true},
     {"query":"P/E under 20 and ROIC above 15%","expect":{"filters":[{"field":"pe","op":"<","value":20}],"filterCount":1},"requireAssumptions":true,"exactFilters":true,"critical":true},
     {"query":"Add ROIC above 15%","mode":"refine","previous":[{"field":"pe","op":"<","value":20}],"expect":{"filters":[{"field":"pe","op":"<","value":20}],"filterCount":1},"requireAssumptions":true,"exactFilters":true,"critical":true},
-    {"query":"Also require free cash flow growth","mode":"refine","previous":[{"field":"pe","op":"<","value":20},{"field":"sector","op":"==","value":"Technology"}],"expect":{"filters":[{"field":"pe","op":"<","value":20},{"field":"sector","op":"==","value":"Technology"}],"filterCount":2},"requireAssumptions":true,"exactFilters":true,"critical":true}
+    {"query":"Also require free cash flow growth","mode":"refine","previous":[{"field":"pe","op":"<","value":20},{"field":"sector","op":"==","value":"Technology"}],"expect":{"filters":[{"field":"pe","op":"<","value":20},{"field":"sector","op":"==","value":"Technology"}],"filterCount":2},"requireAssumptions":true,"exactFilters":true,"critical":true},
+    {"query":"Large companies that are not tech but are cheap. Not dead cheap though.","expect":{"filters":[{"field":"pe","op":">=","value":10},{"field":"pe","op":"<=","value":20},{"field":"pb","op":"<","value":4},{"field":"marketCap","op":">","value":50},{"field":"sector","op":"!=","value":"Technology"}],"ranking":"value","filterCount":5},"requireAssumptions":true,"exactFilters":true,"critical":true},
+    {"query":"Large non-tech companies with low P/E","expect":{"filters":[{"field":"pe","op":"<","value":20},{"field":"marketCap","op":">","value":50},{"field":"sector","op":"!=","value":"Technology"}],"filterCount":3},"exactFilters":true,"critical":true}
   ]
 }
