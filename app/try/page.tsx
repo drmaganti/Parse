@@ -6,6 +6,7 @@ import { FIELDS, SECTORS, type Filter, type StockRow } from "../../lib/fields";
 import { findFilterConflict, sameFilter } from "../../lib/filter-ops";
 import { runScreen, type ScreenResult } from "../../lib/screen";
 import { trackEvent } from "../../lib/analytics";
+import { decodeScreenState, encodeScreenState, type ScreenUniverse } from "../../lib/screen-state";
 
 const T = {
   bg: "#F4F5F7", surface: "#FFFFFF", surfaceAlt: "#FAFBFC", border: "#E6E8EC", borderStrong: "#D4D8DF",
@@ -41,15 +42,34 @@ export default function TryPage() {
   const [hasRun, setHasRun] = useState(false);
   const [shareNote, setShareNote] = useState("");
   const [adding, setAdding] = useState(false);
+  const [universe, setUniverse] = useState<ScreenUniverse | undefined>();
+  const [universeLabel, setUniverseLabel] = useState("S&P 500 + Nasdaq 100");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const initialQuery = params.get("q");
-    if (initialQuery) setInput(initialQuery.slice(0, 320));
-    supabase.from("stocks").select("*").then(({ data, error }) => {
-      if (error) setError("Could not load the stock universe.");
-      else setStocks((data ?? []) as StockRow[]);
-    });
+    const exact = decodeScreenState(params.get("state"));
+    const collectionSlug = params.get("collection") || exact?.universe?.slug;
+    (async () => {
+      const { data, error } = await supabase.from("stocks").select("*");
+      if (error) { setError("Could not load the stock universe."); return; }
+      let rows = (data ?? []) as StockRow[];
+      let nextUniverse = exact?.universe;
+      if (collectionSlug) {
+        const { data: holdings } = await supabase.from("investor_holdings").select("ticker,report_date").eq("collection_slug", collectionSlug).order("report_date", { ascending: false }).limit(250);
+        const latest = holdings?.[0]?.report_date;
+        const symbols = new Set((holdings || []).filter((h: any) => h.report_date === latest && h.ticker).map((h: any) => h.ticker));
+        rows = rows.filter((s) => symbols.has(s.symbol));
+        nextUniverse = { type: "collection", slug: collectionSlug, label: exact?.universe?.label || (collectionSlug === "warren-buffett" ? "Berkshire Hathaway reported holdings" : collectionSlug) };
+        setUniverseLabel(nextUniverse.label || collectionSlug); setUniverse(nextUniverse);
+      }
+      setStocks(rows);
+      if (exact) {
+        const issue = findFilterConflict(exact.filters);
+        setScreenQuery(exact.q); setFilters(exact.filters); setRanking(exact.ranking); setConflict(issue || "");
+        setResults(issue ? [] : runScreen(rows, exact.filters, exact.ranking, 25)); setHasRun(true); setInterpretation("Loaded an exact shared screen.");
+      } else if (initialQuery) setInput(initialQuery.slice(0, 320));
+    })();
   }, []);
 
   const applyFilters = (next: Filter[], nextRanking = ranking) => {
@@ -145,7 +165,7 @@ export default function TryPage() {
     const q = screenQuery || input.trim();
     if (!q || typeof window === "undefined") return;
     const shareUrl = new URL("/screens/share", window.location.origin);
-    shareUrl.searchParams.set("q", q.slice(0, 320));
+    shareUrl.searchParams.set("state", encodeScreenState({ q: q.slice(0, 320), filters, ranking, universe }));
     try {
       if (navigator.share) {
         await navigator.share({ title: "A stock screen from Parse", text: q, url: shareUrl.toString() });
@@ -170,7 +190,7 @@ export default function TryPage() {
     <main style={{ maxWidth: 960, margin: "0 auto", padding: "36px 24px 72px" }}>
       <section style={{ maxWidth: 760 }}>
         <h1 style={{ fontFamily: DISP, fontSize: 28, margin: "0 0 6px", letterSpacing: "-0.02em" }}>{hasRun ? "Refine this screen" : "Describe the screen you want"}</h1>
-        <p style={{ color: T.inkSoft, fontSize: 14.5, margin: "0 0 16px" }}>{hasRun ? "Add or remove a criterion below. Edit a chip directly to change a number." : "Try three screen updates without creating an account. Current universe: S&P 500 + Nasdaq 100, refreshed daily."}</p>
+        <p style={{ color: T.inkSoft, fontSize: 14.5, margin: "0 0 16px" }}>{hasRun ? "Add or remove a criterion below. Edit a chip directly to change a number." : "Try three screen updates without creating an account. Current universe: {universeLabel}, refreshed daily."}</p>
         <textarea className="p-query" value={input} onChange={(e) => setInput(e.target.value)} placeholder={hasRun ? "Example: also require revenue growth above 10%" : "Example: large companies with low P/E ratios"} onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); execute(); } }} />
         <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}><span style={{ color: T.inkSoft, fontSize: 12.5 }}>{runs}/3 guest updates used</span><div style={{ display: "flex", gap: 8 }}>{hasRun && <button className="p-btn-neutral" onClick={resetScreen}>New screen</button>}<button className="p-btn" onClick={execute} disabled={!stocks.length || loading || limitReached || !input.trim()}>{loading ? "Reading…" : limitReached ? "Guest limit reached" : hasRun ? "Update screen" : "Run screen"}</button></div></div>
         {error && <div style={{ color: T.loss, marginTop: 10, fontSize: 13.5 }}>{error}</div>}
