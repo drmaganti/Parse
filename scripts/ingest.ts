@@ -35,6 +35,8 @@ interface Row {
   price: number | null; market_cap: number | null;
   pe: number | null; pb: number | null; ps: number | null;
   div_yield: number | null; beta: number | null; rev_growth: number | null;
+  roic: number | null; operating_margin: number | null; fcf_margin: number | null; fcf_yield: number | null;
+  debt_equity: number | null; interest_coverage: number | null; rev_growth_3y: number | null; eps_growth_3y: number | null; ev_ebitda: number | null;
   rsi: number | null; sma50: number | null; sma200: number | null;
   from_52w_high: number | null; chg_1w: number | null; chg_1d: number | null;
   updated_at: string;
@@ -86,6 +88,10 @@ async function build(symbol: string): Promise<Row | null> {
       pe: round(metrics.pe), pb: round(metrics.pb), ps: round(metrics.ps),
       div_yield: round(metrics.divYield), beta: round(metrics.beta, 2),
       rev_growth: round(metrics.revGrowth),
+      roic: round(metrics.roic), operating_margin: round(metrics.operatingMargin),
+      fcf_margin: round(metrics.fcfMargin), fcf_yield: round(metrics.fcfYield),
+      debt_equity: round(metrics.debtEquity, 2), interest_coverage: round(metrics.interestCoverage, 1),
+      rev_growth_3y: round(metrics.revGrowth3Y), eps_growth_3y: round(metrics.epsGrowth3Y), ev_ebitda: round(metrics.evEbitda, 1),
       rsi: round(rsiVal), sma50: round(sma50), sma200: round(sma200),
       from_52w_high: round(from52), chg_1w: round(chg1w), chg_1d: round(chg1d),
       updated_at: new Date().toISOString(),

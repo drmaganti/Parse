@@ -42,7 +42,21 @@ function addRange(out: Filter[], field: string, match: RegExpMatchArray | null) 
   return true;
 }
 
+const FUNDAMENTAL_TERMS: [string, string][] = [
+  ["revGrowth3Y", "(?:3[- ]?year revenue growth|3y revenue growth|revenue growth (?:over )?(?:3[- ]?years|3y)|3[- ]?year revenue cagr|3y revenue cagr)"],
+  ["epsGrowth3Y", "(?:3[- ]?year (?:eps|earnings) growth|3y (?:eps|earnings) growth|(?:eps|earnings) growth (?:over )?(?:3[- ]?years|3y)|3[- ]?year (?:eps|earnings) cagr|3y (?:eps|earnings) cagr)"],
+  ["roic", "(?:\\broic\\b|return on invested capital)"],
+  ["operatingMargin", "(?:operating margin|operating profit margin)"],
+  ["fcfMargin", "(?:free cash flow margin|\\bfcf margin\\b)"],
+  ["fcfYield", "(?:free cash flow yield|\\bfcf yield\\b)"],
+  ["debtEquity", "(?:debt\\s*(?:to|/)\\s*equity|debt[- ]?equity ratio)"],
+  ["interestCoverage", "(?:interest coverage|interest cover)"],
+  ["evEbitda", "(?:ev\\s*(?:to|/)\\s*ebitda|enterprise value\\s*(?:to|/)\\s*ebitda)"],
+];
+
 function fieldMention(q: string): string | null {
+  const fundamental = FUNDAMENTAL_TERMS.find(([, term]) => new RegExp(term).test(q));
+  if (fundamental) return fundamental[0];
   const tests: [string, RegExp][] = [
     ["pe", /\bp\/?e\b|price.?to.?earnings/],
     ["pb", /\bp\/?b\b|price.?to.?book/],
@@ -77,7 +91,7 @@ function hasRankingIntent(q: string): boolean {
 }
 
 function hasKnownUnsupportedMetric(q: string): boolean {
-  return /\broic\b|return on invested capital|\broe\b|return on equity|\broa\b|return on assets|free cash flow|\bfcf\b|debt\s*(?:to|\/)\s*ebitda|ev\s*(?:to|\/)\s*ebitda|\bpeg\b|current ratio|interest coverage|earnings growth|eps growth|profit growth|debt\s*(?:to|\/)\s*equity/.test(q);
+  return /\broe\b|return on equity|\broa\b|return on assets|(?:free cash flow|\bfcf\b)(?!\s+(?:margin|yield))|debt\s*(?:to|\/)\s*ebitda|\bpeg\b|current ratio|profit growth/.test(q);
 }
 
 function parseFresh(query: string): ParsedScreen {
@@ -98,15 +112,21 @@ function parseFresh(query: string): ParsedScreen {
   addRange(out, "revGrowth", q.match(/revenue growth[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
   addRange(out, "divYield", q.match(/(?:dividend yield|yield(?:ing)?)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
   addRange(out, "rsi", q.match(/\brsi\b[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
+  for (const [field, term] of FUNDAMENTAL_TERMS) {
+    if (!out.some((f) => f.field === field)) addRange(out, field, q.match(new RegExp(`${term}[^\\d-]*between\\s*(-?\\d+(?:\\.\\d+)?)\\s*(?:and|to)\\s*(-?\\d+(?:\\.\\d+)?)`)));
+  }
 
   if (!out.some((f) => f.field === "pe")) addThreshold(out, "pe", q.match(new RegExp(`(?:\\bp\\/?e\\b|price.?to.?earnings)[^\\d-]*?(${cmp})\\s*\\$?(-?\\d+(?:\\.\\d+)?)`)));
   if (!out.some((f) => f.field === "pb")) addThreshold(out, "pb", q.match(new RegExp(`(?:\\bp\\/?b\\b|price.?to.?book)[^\\d-]*?(${cmp})\\s*\\$?(-?\\d+(?:\\.\\d+)?)`)));
   if (!out.some((f) => f.field === "ps")) addThreshold(out, "ps", q.match(new RegExp(`(?:\\bp\\/?s\\b|price.?to.?sales)[^\\d-]*?(${cmp})\\s*\\$?(-?\\d+(?:\\.\\d+)?)`)));
-  if (!out.some((f) => f.field === "divYield")) addThreshold(out, "divYield", q.match(new RegExp(`(?:dividend yield|yield(?:ing)?)\\s*(?:(${cmp})\\s*)?(-?\\d+(?:\\.\\d+)?)`)));
+  if (!out.some((f) => f.field === "divYield") && !/(?:free cash flow|fcf) yield/.test(q)) addThreshold(out, "divYield", q.match(new RegExp(`(?:dividend yield|yield(?:ing)?)\\s*(?:(${cmp})\\s*)?(-?\\d+(?:\\.\\d+)?)`)));
   if (!out.some((f) => f.field === "beta")) addThreshold(out, "beta", q.match(new RegExp(`\\bbeta\\b[^\\d-]*?(${cmp})\\s*(-?\\d+(?:\\.\\d+)?)`)));
   if (!out.some((f) => f.field === "marketCap")) addThreshold(out, "marketCap", q.match(new RegExp(`market\\s*cap[^\\d-]*?(${cmp})\\s*\\$?(-?\\d+(?:\\.\\d+)?)`)));
-  if (!out.some((f) => f.field === "revGrowth")) addThreshold(out, "revGrowth", q.match(new RegExp(`(?:revenue growth|growing revenue|grow(?:ing)? revenue)[^\\d-]*?(${cmp})\\s*(-?\\d+(?:\\.\\d+)?)`)));
+  if (!out.some((f) => f.field === "revGrowth") && !out.some((f) => f.field === "revGrowth3Y") && !new RegExp(FUNDAMENTAL_TERMS[0][1]).test(q)) addThreshold(out, "revGrowth", q.match(new RegExp(`(?:revenue growth|growing revenue|grow(?:ing)? revenue)[^\\d-]*?(${cmp})\\s*(-?\\d+(?:\\.\\d+)?)`)));
   if (!out.some((f) => f.field === "rsi")) addThreshold(out, "rsi", q.match(new RegExp(`\\brsi\\b[^\\d-]*?(${cmp})\\s*(-?\\d+(?:\\.\\d+)?)`)));
+  for (const [field, term] of FUNDAMENTAL_TERMS) {
+    if (!out.some((f) => f.field === field)) addThreshold(out, field, q.match(new RegExp(`${term}[^\\d-]*?(${cmp})\\s*(-?\\d+(?:\\.\\d+)?)`)));
+  }
 
   const positiveGrowth = /positive revenue growth|revenue (?:is )?growing|still growing revenue/.test(q);
   if (positiveGrowth && !out.some((f) => f.field === "revGrowth")) addUnique(out, mk("revGrowth", ">", 0));
@@ -132,7 +152,7 @@ function parseFresh(query: string): ParsedScreen {
   }
   const genericGrowth = /\bgrowth (?:stocks|companies|names)\b|\bgrowing (?:technology|tech|healthcare|financial|consumer|industrial|companies|stocks|names)\b|fast-growing|highest growth|growth at a reasonable price|\bgarp\b/.test(q);
   if (!unsupportedMetric && (genericGrowth || /revenue growth|growing revenue/.test(q))) {
-    if (!out.some((f) => f.field === "revGrowth") && !/highest growth/.test(q)) addUnique(out, mk("revGrowth", ">", 15));
+    if (!out.some((f) => f.field === "revGrowth") && !out.some((f) => f.field === "revGrowth3Y") && !/highest growth/.test(q)) addUnique(out, mk("revGrowth", ">", 15));
     ranking = "quality";
   }
   if (/momentum|near (?:their )?(?:52[- ]?week )?high|breakout|strongest momentum/.test(q)) {

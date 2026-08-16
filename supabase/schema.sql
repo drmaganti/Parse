@@ -17,6 +17,15 @@ create table if not exists public.stocks (
   div_yield      numeric,          -- percent
   beta           numeric,
   rev_growth     numeric,          -- percent YoY
+  roic           numeric,          -- percent; latest fiscal-year value
+  operating_margin numeric,        -- percent TTM
+  fcf_margin     numeric,          -- percent; latest fiscal-year value
+  fcf_yield      numeric,          -- percent; derived from Finnhub EV/FCF and market cap
+  debt_equity    numeric,          -- total debt / total equity
+  interest_coverage numeric,       -- TTM multiple
+  rev_growth_3y  numeric,          -- percent 3-year CAGR
+  eps_growth_3y  numeric,          -- percent 3-year CAGR
+  ev_ebitda      numeric,          -- TTM multiple
   rsi            numeric,          -- computed locally; null if candles unavailable
   sma50          numeric,
   sma200         numeric,
@@ -31,6 +40,16 @@ create index if not exists stocks_market_cap_idx on public.stocks (market_cap de
 create index if not exists stocks_pe_idx         on public.stocks (pe);
 create index if not exists stocks_div_yield_idx  on public.stocks (div_yield desc);
 create index if not exists stocks_sector_idx     on public.stocks (sector);
+
+alter table public.stocks add column if not exists roic numeric;
+alter table public.stocks add column if not exists operating_margin numeric;
+alter table public.stocks add column if not exists fcf_margin numeric;
+alter table public.stocks add column if not exists fcf_yield numeric;
+alter table public.stocks add column if not exists debt_equity numeric;
+alter table public.stocks add column if not exists interest_coverage numeric;
+alter table public.stocks add column if not exists rev_growth_3y numeric;
+alter table public.stocks add column if not exists eps_growth_3y numeric;
+alter table public.stocks add column if not exists ev_ebitda numeric;
 
 alter table public.stocks enable row level security;
 
