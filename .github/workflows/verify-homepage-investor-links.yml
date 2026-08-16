@@ -19,16 +19,12 @@ jobs:
           echo "HTTP $code; bytes $(wc -c < home.html)"
           test "$code" = "200"
           : > bundles.js
-          grep -oE 'src="[^"]+\.js[^"]*"' home.html | sed -E 's/^src="//;s/"$//' | sort -u > scripts.txt
+          grep -oE '/_next/static/[^" ]+\.js' home.html | sed 's/\\u0026/\&/g' | sort -u > scripts.txt
           while IFS= read -r src; do
-            case "$src" in
-              http*) url="$src" ;;
-              *) url="https://getparse.app$src" ;;
-            esac
-            curl -sS -L -H 'Cache-Control: no-cache' --retry 3 --retry-all-errors "$url" >> bundles.js
+            curl -sS -L -H 'Cache-Control: no-cache' --retry 3 --retry-all-errors "https://getparse.app$src" >> bundles.js
             printf '\n' >> bundles.js
           done < scripts.txt
-          echo "Downloaded $(wc -l < scripts.txt) production JS bundles; bytes $(wc -c < bundles.js)"
+          echo "Downloaded $(wc -l < scripts.txt) referenced production JS bundles; bytes $(wc -c < bundles.js)"
           grep -Fq 'Screen famous investor portfolios' bundles.js
           grep -Fq 'Explore investor portfolios' bundles.js
           grep -Fq 'investor_hub_clicked' bundles.js
