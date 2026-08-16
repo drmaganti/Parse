@@ -1,120 +1,100 @@
-# Parse — natural-language stock screener
+# Parse
 
-Describe a screen in plain English. It becomes an editable filter set you can
-tune by hand, run against a nightly-cached US universe, and save to your account.
+Natural-language stock screening with explicit, inspectable filters.
 
-This repo is the **live-data production build**. The interaction (query → editable
-interpretation → ranked results) is the same one proven in the prototype; here the
-numbers come from a real feed instead of sample data.
+Parse lets an investor describe the screen they want in plain English, converts that intent into structured financial criteria, and runs those criteria against a daily-refreshed stock universe. The AI interprets the request; the screening logic itself stays deterministic and visible.
 
-## Architecture (runs at $0)
+## Current product
 
-```
-GitHub Action (nightly)                Next.js on Vercel
-  scripts/ingest.ts                      app/  (UI, ported from prototype)
-  ├─ read data/universe.json             api/parse   → Groq (NL → filters)   [slice 2]
-  ├─ Finnhub free  (rate-limited)        api/screen  → query Supabase cache
-  ├─ compute indicators locally          api/screens → save/load  (RLS)      [slice 2]
-  └─ upsert → Supabase (stocks table)
-                                         Supabase (free): Postgres + Auth
-```
+- Natural-language → structured stock filters
+- Multiple conditions on the same metric (including ranges)
+- Simple categorical exclusions
+- Additive natural-language refinement
+- Direct editing of filter thresholds
+- Ranking and sorting
+- Saved screens with exact structured state
+- Explicit saved screening defaults
+- Exact persistent sharing without reparsing
+- Optional public screen publishing
+- Curated SEO indexing for public screens (publishing alone does not automatically make a page indexable)
+- Investor collections, starting with Berkshire Hathaway / Warren Buffett reported 13F holdings
+- Guest experience with limited updates before signup
 
-- **Finnhub free** — market data. 60 calls/min, personal/non-commercial. The nightly
-  job is the *only* thing that calls it; the app never hits Finnhub directly, so one
-  key covers all users and no key is ever exposed to the browser.
-- **Indicators are computed locally** from candles (RSI, SMA), so no indicator calls.
-- **Supabase free** — Postgres holds the cached universe; Auth handles accounts;
-  Row Level Security scopes saved screens to their owner.
-- **GitHub Actions** — nightly ingestion. Same pattern as the value-screener.
-- **Groq (llama-3.3-70b)** — server-side NL→filter parsing (slice 2).
+## Product principle
 
-## What's in this slice (slice 1: data foundation)
+> Natural language changes structure; direct manipulation changes values.
 
-| File | Role |
-|---|---|
-| `supabase/schema.sql` | tables, indexes, RLS policies |
-| `data/universe.json` | the ticker universe (editable — seeded, expand to full S&P 500 + NDX 100) |
-| `lib/fields.ts` | filter-field + ranking vocabulary, shared by ingest, screen, and UI |
-| `lib/indicators.ts` | RSI / SMA from OHLCV |
-| `lib/screen.ts` | screening + ranking engine over cached rows |
-| `lib/finnhub.ts` | rate-limited Finnhub client (55/min, safe under the 60 cap) |
-| `scripts/ingest.ts` | nightly pull → compute → upsert |
-| `.github/workflows/ingest.yml` | nightly schedule |
+The core workflow is:
 
-## Slice 2: the parse step + eval (added)
+> Describe → inspect → add/remove criteria → edit thresholds → run.
 
-| File | Role |
-|---|---|
-| `lib/llm.ts` | provider seam — Groq default, Google by one env var (`LLM_PROVIDER`) |
-| `lib/parse.ts` | one model call → validated filters; sticky merge keeps user-locked chips on refine |
-| `lib/fallback-parse.ts` | deterministic rule-based parser so the step degrades instead of erroring |
-| `app/api/parse/route.ts` | `POST /api/parse` — runs server-side, key never reaches the browser |
-| `eval/cases.json` | parse-quality cases (explicit + vague) |
-| `eval/run.ts` | scores parse output; the record behind any future model/routing choice |
+Parse is not a recommendation engine and does not ask an LLM to choose stocks. Structured filters are applied by the deterministic screening engine.
 
-No orchestrator, no LangChain, no dual-model routing. The parse is a single clean
-call behind a swappable provider. If a measured failure ever warrants it, the fix is
-a one-line heuristic, not a framework.
+## Data
 
-### Run the eval
+The primary market universe is currently the S&P 500 + Nasdaq 100, refreshed daily. Investor collection holdings are sourced from public SEC filings and are inherently delayed. A 13F collection represents the reporting manager's disclosed U.S. equity holdings, not an individual's personal brokerage account and not a real-time portfolio.
 
-```bash
-OFFLINE=1 npm run eval    # rule-based fallback, no key — CI smoke test (~11/12)
-npm run eval              # the configured model (needs GROQ_API_KEY); fails CI under 70%
-```
+## Saved screens and monitoring foundation
 
-The offline pass measures the *fallback*, deliberately simple. The model path scores
-higher; the harness exists so you decide Groq vs Google, or 70B vs 8B, on numbers.
+Saved screens persist the exact filters, ranking, universe, last run time, result count, and prior result symbols. Parse also stores added/removed result snapshots when a saved screen is rerun with unchanged criteria. This is backend infrastructure for future monitoring/re-engagement; P1 does not expose change-history UI or send screen-change email alerts.
 
-**Remaining slice:** port the prototype UI into `app/` and wire Supabase auth +
-a saved-screens API onto these endpoints. See the runbook below.
+## Sharing and publishing
 
-## Going to production — runbook
+An exact shared screen stores structured filters and ranking so opening the link never needs to re-run the natural-language parser. Signed-in users can create:
 
-1. **Stand up data.** Create a Supabase project, run `supabase/schema.sql`, register
-   for Finnhub, fill `.env.local`, `npm run ingest`. Confirm rows land in `stocks`.
-2. **Schedule ingestion.** Add `FINNHUB_API_KEY`, `SUPABASE_URL`,
-   `SUPABASE_SERVICE_ROLE_KEY` as GitHub Actions secrets. The nightly workflow runs
-   `npm run ingest`; trigger it once by hand to verify.
-3. **Wire the model.** Add `GROQ_API_KEY` (and `LLM_PROVIDER=groq`). `npm run eval`
-   and read the score. If vague queries parse badly, try `GROQ_MODEL=llama-3.3-70b`
-   vs `8b-instant`, or flip `LLM_PROVIDER=google`, and re-run the eval to compare.
-4. **Build the UI slice.** Port the approved prototype into `app/page.tsx`, replacing
-   its local auth and storage with Supabase Auth and the saved-screens table, and
-   pointing the query box at `/api/parse` and a `/api/screen` route that queries the
-   `stocks` cache. This is the one piece not yet in the repo.
-5. **Deploy.** Push to Vercel, set the same env vars in the project settings, ship.
-6. **Before charging anyone.** Move Finnhub to a paid tier (the free tier is
-   personal/non-commercial) — a config change behind `lib/finnhub.ts`, not a rewrite.
+- **Unlisted** links: accessible to anyone with the URL, not indexed.
+- **Public** screens: discoverable inside Parse. Public screens remain `noindex` unless explicitly curated as indexable, which protects SEO quality from duplicate or low-value user-generated pages.
 
-## Setup
+## Investor collections
 
-1. **Supabase** — create a free project. Run `supabase/schema.sql` in the SQL editor.
-   Copy the project URL, the anon key, and the service-role key.
-2. **Finnhub** — register at finnhub.io, copy the free API key.
-3. **Env** — copy `.env.example` to `.env.local` and fill it in.
-4. **Ingestion secrets** — in the GitHub repo, add `FINNHUB_API_KEY`,
-   `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY` as Actions secrets.
+`/investors` is the public collection hub. The first collection is `/investors/warren-buffett`, which presents Berkshire Hathaway's latest reported Form 13F holdings and lets a visitor screen that reported portfolio with Parse.
 
-## Run the ingestion locally
+The SEC ingestion job aggregates duplicate 13F rows by CUSIP before calculating portfolio weights and mapping holdings to tickers. The workflow refreshes on weekdays and on relevant production changes.
+
+## Development
 
 ```bash
 npm install
-npm run ingest         # pulls the universe, computes indicators, upserts to Supabase
+npm run dev
 ```
 
-The Action runs it nightly on a schedule; you can also trigger it by hand from the
-Actions tab.
+### Checks
 
-## A note on Finnhub candles
+```bash
+npm run test:p0-parser
+npm run build
+```
 
-Indicator math needs daily candles (`/stock/candle`). If your Finnhub plan doesn't
-include that endpoint, set `USE_CANDLES=false` in the env. Fundamentals still populate
-fully; RSI and the SMAs stay null until the endpoint is available. Everything degrades
-gracefully rather than failing the run.
+### Investor holdings refresh
 
-## Licensing reminder
+Requires:
 
-Finnhub's free tier is **personal, non-commercial**. This is fine for a $0 showcase
-with no payment page. Adding billing means moving to a paid Finnhub tier — a config
-change behind the same client, not a rewrite.
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- optional `SEC_USER_AGENT`
+
+Then run:
+
+```bash
+npm run ingest:investors
+```
+
+## Environment
+
+See `.env.example` for the current application and ingestion variables.
+
+## Database
+
+Supabase schema and migrations live under `supabase/`.
+
+P1 adds:
+
+- monitoring-ready fields to `saved_screens`
+- `shared_screens`
+- `investor_holdings`
+
+All exposed tables use Row Level Security. Public investor holdings are read-only through policy; shared-screen writes are owner-scoped.
+
+## Disclaimer
+
+Parse is a research tool, not investment advice.
