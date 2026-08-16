@@ -20,8 +20,10 @@ create table if not exists public.shared_screens (
   ranking text not null default 'marketCap',
   universe text not null default 'default',
   visibility text not null default 'unlisted' check (visibility in ('unlisted','public')),
+  is_indexable boolean not null default false,
   created_at timestamptz not null default now()
 );
+alter table public.shared_screens add column if not exists is_indexable boolean not null default false;
 create index if not exists shared_screens_owner_idx on public.shared_screens (owner_id, created_at desc);
 create index if not exists shared_screens_public_idx on public.shared_screens (visibility, created_at desc);
 alter table public.shared_screens enable row level security;
