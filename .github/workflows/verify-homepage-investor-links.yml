@@ -1,0 +1,23 @@
+name: verify-homepage-investor-links
+
+on:
+  push:
+    branches: [agent/verify-five-investor-pages]
+    paths:
+      - ".github/workflows/verify-homepage-investor-links.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify production homepage investor links
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -L --retry 3 --retry-all-errors -o home.html -w '%{http_code}' https://getparse.app/)
+          echo "HTTP $code; bytes $(wc -c < home.html)"
+          test "$code" = "200"
+          grep -Fq 'href="/investors"' home.html
+          grep -Fq 'Screen famous investor portfolios' home.html
+          grep -Fq 'Explore investor portfolios' home.html
+          echo "LIVE_HOMEPAGE_INVESTORS: PASS"
