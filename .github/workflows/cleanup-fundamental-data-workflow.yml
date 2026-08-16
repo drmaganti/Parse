@@ -1,0 +1,28 @@
+name: cleanup-fundamental-data-workflow
+
+on:
+  push:
+    branches: [agent/long-term-fundamentals]
+    paths:
+      - ".github/workflows/cleanup-fundamental-data-workflow.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/long-term-fundamentals
+      - name: Remove temporary workflows
+        run: |
+          git rm .github/workflows/verify-long-term-fundamentals-data.yml
+          git rm .github/workflows/cleanup-fundamental-data-workflow.yml
+      - name: Commit cleanup
+        run: |
+          git config user.name "drmaganti"
+          git config user.email "ram.maganti@outlook.com"
+          git commit -m "Remove temporary fundamentals data workflow"
+          git push origin HEAD:agent/long-term-fundamentals
