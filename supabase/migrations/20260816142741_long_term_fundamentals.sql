@@ -1,0 +1,9 @@
+alter table public.stocks add column if not exists roic numeric;
+alter table public.stocks add column if not exists operating_margin numeric;
+alter table public.stocks add column if not exists fcf_margin numeric;
+alter table public.stocks add column if not exists fcf_yield numeric;
+alter table public.stocks add column if not exists debt_equity numeric;
+alter table public.stocks add column if not exists interest_coverage numeric;
+alter table public.stocks add column if not exists rev_growth_3y numeric;
+alter table public.stocks add column if not exists eps_growth_3y numeric;
+alter table public.stocks add column if not exists ev_ebitda numeric;

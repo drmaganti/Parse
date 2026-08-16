@@ -34,6 +34,15 @@ export interface Metrics {
   divYield?: number;
   beta?: number;
   revGrowth?: number;
+  roic?: number;
+  operatingMargin?: number;
+  fcfMargin?: number;
+  fcfYield?: number;
+  debtEquity?: number;
+  interestCoverage?: number;
+  revGrowth3Y?: number;
+  epsGrowth3Y?: number;
+  evEbitda?: number;
   high52?: number;
 }
 
@@ -45,14 +54,31 @@ export async function fetchProfile(symbol: string, key: string) {
 export async function fetchMetrics(symbol: string, key: string): Promise<Metrics> {
   const d = await get(`/stock/metric?symbol=${symbol}&metric=all`, key);
   const m = d?.metric ?? {};
+  const marketCap = num(m.marketCapitalization);
+  const enterpriseValue = num(m.enterpriseValue);
+  const evFcf = num(m["currentEv/freeCashFlowTTM"]);
+  const roicAnnual = latestAnnual(d?.series, "roic");
+  const fcfMarginAnnual = latestAnnual(d?.series, "fcfMargin");
+  const fcfYield = enterpriseValue != null && marketCap != null && marketCap > 0 && evFcf != null && evFcf !== 0
+    ? (enterpriseValue / evFcf / marketCap) * 100
+    : undefined;
   return {
-    marketCap: num(m.marketCapitalization),                 // millions
+    marketCap,                                               // millions
     pe: num(m.peTTM ?? m.peBasicExclExtraTTM),
     pb: num(m.pbQuarterly ?? m.pbAnnual),
     ps: num(m.psTTM),
     divYield: num(m.dividendYieldIndicatedAnnual ?? m.currentDividendYieldTTM),
     beta: num(m.beta),
     revGrowth: num(m.revenueGrowthTTMYoy),
+    roic: roicAnnual == null ? undefined : roicAnnual * 100,
+    operatingMargin: num(m.operatingMarginTTM),
+    fcfMargin: fcfMarginAnnual == null ? undefined : fcfMarginAnnual * 100,
+    fcfYield,
+    debtEquity: num(m["totalDebt/totalEquityQuarterly"]),
+    interestCoverage: num(m.netInterestCoverageTTM),
+    revGrowth3Y: num(m.revenueGrowth3Y),
+    epsGrowth3Y: num(m.epsGrowth3Y),
+    evEbitda: num(m.evEbitdaTTM),
     high52: num(m["52WeekHigh"]),
   };
 }
@@ -78,6 +104,13 @@ export async function fetchCandles(
 function num(v: any): number | undefined {
   const x = Number(v);
   return Number.isFinite(x) ? x : undefined;
+}
+
+function latestAnnual(series: any, key: string): number | undefined {
+  const rows = series?.annual?.[key];
+  if (!Array.isArray(rows) || rows.length === 0) return undefined;
+  const latest = [...rows].sort((a, b) => String(b?.period ?? "").localeCompare(String(a?.period ?? "")))[0];
+  return num(latest?.v);
 }
 
 // Collapse Finnhub's fine-grained industries into the sectors our vocabulary uses.

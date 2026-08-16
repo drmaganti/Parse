@@ -144,6 +144,12 @@ export default function TryPage() {
     });
   };
 
+  const activeMetricCols = useMemo(() => Array.from(new Set(filters.flatMap((f) => {
+    const meta = FIELDS[f.field];
+    if (!meta || meta.kind !== "num" || ["price", "market_cap", "pe", "chg_1w"].includes(meta.col)) return [];
+    return [meta.col as keyof StockRow];
+  }))).slice(0, 4), [filters]);
+
   const displayedResults = useMemo(() => {
     if (!sort) return results;
     const { col, dir } = sort;
@@ -212,14 +218,25 @@ export default function TryPage() {
           <th aria-sort={ariaSort("price")} onClick={() => toggleSort("price")} style={headerStyle("right")}>Price{sortArrow("price")}</th>
           <th aria-sort={ariaSort("market_cap")} onClick={() => toggleSort("market_cap")} style={headerStyle("right")}>Market cap{sortArrow("market_cap")}</th>
           <th aria-sort={ariaSort("pe")} onClick={() => toggleSort("pe")} style={headerStyle("right")}>P/E{sortArrow("pe")}</th>
+          {activeMetricCols.map((col) => <th key={String(col)} aria-sort={ariaSort(col)} onClick={() => toggleSort(col)} style={headerStyle("right")}>{fieldMetaForColumn(col)?.label || String(col)}{sortArrow(col)}</th>)}
           <th aria-sort={ariaSort("chg_1w")} onClick={() => toggleSort("chg_1w")} style={headerStyle("right")}>1W change{sortArrow("chg_1w")}</th>
-        </tr></thead><tbody>{displayedResults.map((r) => <tr key={r.symbol}><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, fontFamily: MONO, fontSize: 13 }}>{r.symbol}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, fontSize: 13 }}>{r.name}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.price == null ? "—" : `$${Number(r.price).toFixed(2)}`}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.market_cap == null ? "—" : `$${Number(r.market_cap).toFixed(1)}B`}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.pe == null ? "—" : Number(r.pe).toFixed(1)}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13, color: (r.chg_1w ?? 0) >= 0 ? T.gain : T.loss }}>{r.chg_1w == null ? "—" : `${Number(r.chg_1w).toFixed(1)}%`}</td></tr>)}</tbody></table></div>}
+        </tr></thead><tbody>{displayedResults.map((r) => <tr key={r.symbol}><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, fontFamily: MONO, fontSize: 13 }}>{r.symbol}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, fontSize: 13 }}>{r.name}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.price == null ? "—" : `$${Number(r.price).toFixed(2)}`}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.market_cap == null ? "—" : `$${Number(r.market_cap).toFixed(1)}B`}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.pe == null ? "—" : Number(r.pe).toFixed(1)}</td>{activeMetricCols.map((col) => <td key={String(col)} style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{formatMetricCell(col, r[col])}</td>)}<td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13, color: (r.chg_1w ?? 0) >= 0 ? T.gain : T.loss }}>{r.chg_1w == null ? "—" : `${Number(r.chg_1w).toFixed(1)}%`}</td></tr>)}</tbody></table></div>}
         <div style={{ marginTop: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}><span style={{ color: T.inkSoft, fontSize: 13.5 }}>Research tool only; these are screen matches, not investment recommendations.</span><a href="/account?mode=signup" className="p-link">Create account to save →</a></div>
       </section>}
 
       {limitReached && <section style={{ marginTop: 18, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: 18 }}><div style={{ fontFamily: DISP, fontWeight: 600, fontSize: 18, marginBottom: 6 }}>Continue with an account</div><div style={{ color: T.inkSoft, fontSize: 14, marginBottom: 12 }}>Create an account to keep screening and save screens for later.</div><a href="/account?mode=signup" className="p-link">Create account →</a></section>}
     </main>
   </div>;
+}
+
+function fieldMetaForColumn(col: keyof StockRow) { return Object.values(FIELDS).find((m) => m.col === col); }
+function formatMetricCell(col: keyof StockRow, value: any) {
+  if (value == null) return "—";
+  const meta = fieldMetaForColumn(col);
+  if (meta?.unit === "%") return `${Number(value).toFixed(1)}%`;
+  if (meta?.unit === "×") return `${Number(value).toFixed(1)}×`;
+  if (meta?.unit === "$B") return `$${Number(value).toFixed(1)}B`;
+  return Number(value).toFixed(2);
 }
 
 function FilterChip({ f, onEdit, onRemove }: { f: Filter; onEdit: (id: string, patch: Partial<Filter>) => void; onRemove: (id: string) => void }) {
