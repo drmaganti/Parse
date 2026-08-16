@@ -1,0 +1,65 @@
+name: verify-five-investor-pages
+
+on:
+  push:
+    branches: [agent/verify-five-investor-pages]
+    paths:
+      - ".github/workflows/verify-five-investor-pages.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify live investor pages
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          fetch() {
+            local path="$1"
+            local out="$2"
+            echo "GET https://getparse.app${path}"
+            code=$(curl -sS -L --retry 3 --retry-all-errors -o "$out" -w '%{http_code}' "https://getparse.app${path}")
+            echo "HTTP $code; bytes $(wc -c < "$out")"
+            test "$code" = "200"
+          }
+
+          fetch "/investors" investors.html
+          for name in "Bill Ackman" "Cathie Wood" "Michael Burry" "Stanley Druckenmiller" "Ray Dalio"; do grep -Fq "$name" investors.html; done
+          echo "INVESTOR_HUB: PASS"
+
+          fetch "/investors/bill-ackman" ackman.html
+          grep -Fq "Bill Ackman Stocks" ackman.html
+          grep -Fq "11 reported positions" ackman.html
+          grep -Fq "collection=bill-ackman" ackman.html
+          echo "ACKMAN: PASS"
+
+          fetch "/investors/cathie-wood" cathie.html
+          grep -Fq "Cathie Wood Stocks" cathie.html
+          grep -Fq "43 reported positions" cathie.html
+          grep -Fq "collection=cathie-wood" cathie.html
+          grep -Fq "ARK Innovation ETF holdings" cathie.html
+          echo "CATHIE_WOOD: PASS"
+
+          fetch "/investors/michael-burry" burry.html
+          grep -Fq "Michael Burry Stocks" burry.html
+          grep -Fq "8 reported positions" burry.html
+          grep -Fq "collection=michael-burry" burry.html
+          echo "BURRY: PASS"
+
+          fetch "/investors/stanley-druckenmiller" druck.html
+          grep -Fq "Stanley Druckenmiller Stocks" druck.html
+          grep -Fq "90 reported positions" druck.html
+          grep -Fq "collection=stanley-druckenmiller" druck.html
+          echo "DRUCKENMILLER: PASS"
+
+          fetch "/investors/ray-dalio" dalio.html
+          grep -Fq "Ray Dalio Stocks" dalio.html
+          grep -Fq "997 reported positions" dalio.html
+          grep -Fq "collection=ray-dalio" dalio.html
+          echo "DALIO: PASS"
+
+          fetch "/sitemap.xml" sitemap.xml
+          for slug in bill-ackman cathie-wood michael-burry stanley-druckenmiller ray-dalio; do grep -Fq "https://getparse.app/investors/$slug" sitemap.xml; done
+          echo "SITEMAP: PASS"
+          echo "LIVE_FIVE_INVESTOR_PAGES: PASS"
