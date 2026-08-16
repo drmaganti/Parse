@@ -22,8 +22,15 @@ export function normalizeScreenQuery(input: string): NormalizedQuery {
 
   // Natural-language negation is easy to miss in token-based parsing. Rewrite
   // only explicit sector negations into the parser's supported exclusion form.
+  // Preserve noun phrases such as "large non-tech companies" so other
+  // modifiers (large, cheap, growing, etc.) remain parseable.
   for (const [alias, canonical] of SECTOR_ALIASES) {
     const source = alias.source.replace(/^\\b|\\b$/g, "");
+    const nounRx = new RegExp(`\\b(?:not|non[- ]?)\\s*(?:${source})\\s+(companies|stocks|names)\\b`, "ig");
+    if (nounRx.test(query)) {
+      query = query.replace(nounRx, `$1 excluding ${canonical}`);
+    }
+
     const notRx = new RegExp(`\\b(?:not|non[- ]?)\\s*(?:${source})\\b`, "ig");
     if (notRx.test(query)) {
       query = query.replace(notRx, `exclude ${canonical}`);
