@@ -1,0 +1,46 @@
+name: verify-reported-composite-prompt
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/verify-reported-prompt.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify exact reported prompt against production
+        shell: bash
+        run: |
+          node <<'NODE'
+          const query = "Large companies that are not tech but are cheap. Not dead cheap though.";
+          const response = await fetch("https://getparse.app/api/parse", {
+            method: "POST",
+            headers: { "content-type": "application/json", "user-agent": "parse-reported-regression/1.0" },
+            body: JSON.stringify({ query, filters: [], ranking: "marketCap", mode: "new" }),
+          });
+          if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+          const result = await response.json();
+          const expected = [
+            ["pe", ">=", 10],
+            ["pe", "<=", 20],
+            ["pb", "<", 4],
+            ["marketCap", ">", 50],
+            ["sector", "!=", "Technology"],
+          ];
+          const actual = result.filters ?? [];
+          for (const [field, op, value] of expected) {
+            if (!actual.some((f) => f.field === field && f.op === op && f.value === value)) {
+              throw new Error(`Missing ${field}${op}${value}: ${JSON.stringify(result)}`);
+            }
+          }
+          if (actual.length !== expected.length) throw new Error(`Unexpected filters: ${JSON.stringify(result)}`);
+          if (result.ranking !== "value") throw new Error(`Unexpected ranking: ${result.ranking}`);
+          if (!Array.isArray(result.assumptions) || !result.assumptions.length) throw new Error(`Missing fuzzy-language assumption: ${JSON.stringify(result)}`);
+          console.log(JSON.stringify(result, null, 2));
+          console.log("PRODUCTION REPORTED PROMPT: PASS");
+          NODE
