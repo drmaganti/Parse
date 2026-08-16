@@ -10,22 +10,28 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - name: Verify fresh production homepage investor bundle
-        shell: bash
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install browser verifier
         run: |
-          set -euo pipefail
-          verify="f3330e4549d7baa411ba2df53e97ae7b673f15ec"
-          code=$(curl -sS -L -H 'Cache-Control: no-cache' --retry 3 --retry-all-errors -o home.html -w '%{http_code}' "https://getparse.app/?verify=$verify")
-          echo "HTTP $code; bytes $(wc -c < home.html)"
-          test "$code" = "200"
-          : > bundles.js
-          grep -oE '/_next/static/[^" ]+\.js' home.html | sed 's/\\u0026/\&/g' | sort -u > scripts.txt
-          while IFS= read -r src; do
-            curl -sS -L -H 'Cache-Control: no-cache' --retry 3 --retry-all-errors "https://getparse.app$src" >> bundles.js
-            printf '\n' >> bundles.js
-          done < scripts.txt
-          echo "Downloaded $(wc -l < scripts.txt) referenced production JS bundles; bytes $(wc -c < bundles.js)"
-          grep -Fq 'Screen famous investor portfolios' bundles.js
-          grep -Fq 'Explore investor portfolios' bundles.js
-          grep -Fq 'investor_hub_clicked' bundles.js
-          echo "LIVE_HOMEPAGE_INVESTORS: PASS"
+          npm install --no-save playwright@1.55.0
+          npx playwright install chromium
+      - name: Verify rendered production homepage
+        run: |
+          node <<'NODE'
+          const { chromium } = require('playwright');
+          (async () => {
+            const browser = await chromium.launch({ headless: true });
+            const page = await browser.newPage();
+            await page.goto('https://getparse.app/?verify=f3330e4549d7baa411ba2df53e97ae7b673f15ec', { waitUntil: 'networkidle' });
+            await page.getByRole('link', { name: 'Investors', exact: true }).waitFor({ state: 'visible', timeout: 15000 });
+            await page.getByText('Screen famous investor portfolios', { exact: true }).waitFor({ state: 'visible', timeout: 15000 });
+            await page.getByRole('link', { name: 'Explore investor portfolios', exact: false }).waitFor({ state: 'visible', timeout: 15000 });
+            const navHref = await page.getByRole('link', { name: 'Investors', exact: true }).getAttribute('href');
+            const discoveryHref = await page.getByRole('link', { name: 'Explore investor portfolios', exact: false }).getAttribute('href');
+            if (navHref !== '/investors' || discoveryHref !== '/investors') throw new Error(`Unexpected hrefs: ${navHref}, ${discoveryHref}`);
+            console.log('LIVE_HOMEPAGE_INVESTORS: PASS');
+            await browser.close();
+          })().catch((error) => { console.error(error); process.exit(1); });
+          NODE
