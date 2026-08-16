@@ -1,0 +1,36 @@
+name: refresh-home-route
+
+on:
+  push:
+    branches: [agent/refresh-home-route]
+    paths:
+      - ".github/workflows/refresh-home-route.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/refresh-home-route
+      - name: Touch root client entry
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path("app/page.tsx")
+          s = p.read_text()
+          old = 'return <Landing mode="home" onGetStarted={() => { window.location.href = "/account?mode=signup"; }} />;'
+          new = 'return <Landing key="home-investors-v1" mode="home" onGetStarted={() => { window.location.href = "/account?mode=signup"; }} />;'
+          if old not in s:
+              raise SystemExit("home Landing target not found")
+          p.write_text(s.replace(old, new, 1))
+      - name: Commit route refresh
+        run: |
+          git config user.name "drmaganti"
+          git config user.email "ram.maganti@outlook.com"
+          git add app/page.tsx
+          git commit -m "Refresh homepage client entry"
+          git push origin HEAD:agent/refresh-home-route
