@@ -8,7 +8,7 @@ const base = "https://getparse.app";
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
   let publicScreens: any[] = [];
-  try { const { data } = await supabasePublic.from("shared_screens").select("slug,created_at").eq("visibility", "public").order("created_at", { ascending: false }).limit(500); publicScreens = data ?? []; } catch {}
+  try { const { data } = await supabasePublic.from("shared_screens").select("slug,created_at").eq("visibility", "public").eq("is_indexable", true).order("created_at", { ascending: false }).limit(500); publicScreens = data ?? []; } catch {}
   return [
     { url: base, lastModified: now, changeFrequency: "weekly", priority: 1 },
     { url: `${base}/try`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
