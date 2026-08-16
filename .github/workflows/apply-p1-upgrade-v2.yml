@@ -1,0 +1,30 @@
+name: apply-p1-upgrade-v2
+
+on:
+  push:
+    branches: [agent/p1-persistence-sharing-collections]
+    paths:
+      - ".github/workflows/apply-p1-upgrade-v2.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/p1-persistence-sharing-collections
+      - name: Apply P1 upgrade without workflow changes
+        shell: bash
+        run: |
+          sed -n "/cat > \/tmp\/p1.b64 <<'EOF'/,/^[[:space:]]*EOF$/p" .github/workflows/apply-p1-upgrade.yml | sed '1d;$d;s/^          //' > /tmp/p1.b64
+          base64 -d /tmp/p1.b64 | gzip -d > /tmp/apply-p1-upgrade.mjs
+          node /tmp/apply-p1-upgrade.mjs
+          rm -f .github/workflows/investor-holdings.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Build P1 persistence sharing and investor collections"
+          git push origin HEAD:agent/p1-persistence-sharing-collections
