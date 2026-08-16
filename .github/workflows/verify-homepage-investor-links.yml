@@ -10,10 +10,36 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - name: Inspect production cache headers
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Revalidate homepage cache
         run: |
           set -euo pipefail
-          echo '=== ROOT ==='
-          curl -sSIL 'https://getparse.app/?verify=74abcede3a8ae62b8f6f1beb448d8bdfbbfb3f93' | grep -iE '^(HTTP/|age:|cache-control:|etag:|x-vercel-cache:|x-vercel-id:|server:|date:|location:)'
-          echo '=== INVESTORS ==='
-          curl -sSIL 'https://getparse.app/investors?verify=74abcede3a8ae62b8f6f1beb448d8bdfbbfb3f93' | grep -iE '^(HTTP/|age:|cache-control:|etag:|x-vercel-cache:|x-vercel-id:|server:|date:|location:)'
+          code=$(curl -sS -X POST -o revalidate.json -w '%{http_code}' https://getparse.app/api/internal/revalidate-home)
+          echo "REVALIDATE HTTP $code"
+          cat revalidate.json
+          test "$code" = "200"
+      - name: Install browser verifier
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install chromium
+      - name: Verify rendered production homepage
+        run: |
+          node <<'NODE'
+          const { chromium } = require('playwright');
+          (async () => {
+            const browser = await chromium.launch({ headless: true });
+            const page = await browser.newPage();
+            const response = await page.goto('https://getparse.app/?verify=8631d5fce941979559fe004d93eee8765e7e4230', { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await page.getByRole('link', { name: 'Investors', exact: true }).waitFor({ state: 'visible', timeout: 20000 });
+            await page.getByText('Screen famous investor portfolios', { exact: true }).waitFor({ state: 'visible', timeout: 20000 });
+            const navHref = await page.getByRole('link', { name: 'Investors', exact: true }).getAttribute('href');
+            const discovery = page.getByRole('link', { name: 'Explore investor portfolios', exact: false });
+            await discovery.waitFor({ state: 'visible', timeout: 20000 });
+            const discoveryHref = await discovery.getAttribute('href');
+            if (response?.status() !== 200 || navHref !== '/investors' || discoveryHref !== '/investors') throw new Error(`Verification failed: status=${response?.status()}, nav=${navHref}, discovery=${discoveryHref}`);
+            console.log('LIVE_HOMEPAGE_INVESTORS: PASS');
+            await browser.close();
+          })().catch((error) => { console.error(error); process.exit(1); });
+          NODE
