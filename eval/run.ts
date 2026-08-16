@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { parseQuery } from "../lib/parse";
 import { fallbackParse } from "../lib/fallback-parse";
+import { normalizeScreenQuery } from "../lib/query-normalize";
 import { evaluateCase, hydrate, type EvalCase } from "./harness";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -13,6 +14,19 @@ const MODEL_MIN_PASS_RATE = Number(process.env.MODEL_MIN_PASS_RATE || 0.95);
 function load(name: string): EvalCase[] {
   const raw = JSON.parse(readFileSync(join(__dir, name), "utf8"));
   return raw.cases || [];
+}
+
+function parseOffline(c: EvalCase, previous: ReturnType<typeof hydrate>, ranking: string, mode: "new" | "refine") {
+  const normalized = normalizeScreenQuery(c.query);
+  const result = fallbackParse(
+    normalized.query,
+    mode === "refine" ? previous : [],
+    [],
+    ranking,
+    mode === "refine"
+  );
+  result.assumptions = [...result.assumptions, ...normalized.assumptions];
+  return { ...result, source: "rules" as const };
 }
 
 async function run() {
@@ -37,9 +51,9 @@ async function run() {
     for (const c of cases) {
       const previous = hydrate(c.previous);
       const ranking = c.currentRanking ?? "marketCap";
-      const mode = c.mode ?? (previous.length ? "refine" : "new");
+      const mode = (c.mode ?? (previous.length ? "refine" : "new")) as "new" | "refine";
       const result = OFFLINE
-        ? { ...fallbackParse(c.query, mode === "refine" ? previous : [], [], ranking, mode === "refine"), source: "rules" as const }
+        ? parseOffline(c, previous, ranking, mode)
         : await parseQuery(c.query, mode === "refine" ? previous : [], [], ranking, mode);
 
       sources[result.source] = (sources[result.source] || 0) + 1;
