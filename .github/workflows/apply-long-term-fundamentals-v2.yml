@@ -26,6 +26,7 @@ jobs:
           cache: npm
       - run: npx -y supabase@latest migration new long_term_fundamentals
       - run: python .github/scripts/apply-long-term-fundamentals.py
+      - run: python .github/scripts/postprocess-long-term-fundamentals.py
       - run: npm ci
       - run: npm run test:p0-parser
       - run: npm run build
