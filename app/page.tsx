@@ -1,232 +1,412 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { FIELDS, RANKINGS, type Filter, type StockRow } from "../lib/fields";
-import { runScreen } from "../lib/screen";
-import { normalizeFilters, applyRefinement, type RefinementAction } from "../lib/refinement";
+import Landing from "../components/Landing";
+import FeedbackButton from "../components/FeedbackButton";
+import { FIELDS, RANKINGS, SECTORS, type Filter, type StockRow } from "../lib/fields";
+import { findFilterConflict, mergeDefaults, sameFilter } from "../lib/filter-ops";
+import { runScreen, type ScreenResult } from "../lib/screen";
 import { screenFingerprint, screenSlug } from "../lib/screen-state";
 import { trackEvent } from "../lib/analytics";
 
-// Design tokens
 const T = {
-  bg: "#F4F5F7", surface: "#FFFFFF", surfaceAlt: "#FAFBFC", border: "#E6E8EC", borderStrong: "#D4D8DF",
-  ink: "#15171C", inkSoft: "#565C67", inkFaint: "#8B919C", accent: "#2C36A8", accentSoft: "#ECEEFA", accentInk: "#232A85",
-  gain: "#177A4B", loss: "#B93A3A", amber: "#9A6400",
+  bg: "#F4F5F7", surface: "#FFFFFF", surfaceAlt: "#FAFBFC",
+  border: "#E6E8EC", borderStrong: "#D4D8DF",
+  ink: "#15171C", inkSoft: "#565C67", inkFaint: "#68707D",
+  accent: "#2C36A8", accentSoft: "#ECEEFA", accentInk: "#232A85",
+  gain: "#0B8A5B", loss: "#C33328",
 };
+const FONT_DISPLAY = "var(--font-display), 'Instrument Sans', system-ui, sans-serif";
+const FONT_MONO = "var(--font-mono), 'JetBrains Mono', ui-monospace, monospace";
+const DEFAULTS_METADATA_KEY = "parse_screening_defaults";
 
 const EXAMPLES = [
-  "Large tech companies with P/E under 25",
-  "Dividend stocks yielding over 3% with low volatility",
-  "Cheap stocks with positive revenue growth",
+  "Cheap large caps with a P/E under 15",
+  "Dividend payers yielding over 3% with low volatility",
+  "Tech companies growing revenue more than 20% a year",
+  "Stocks with P/E between 10 and 20",
+  "Growing companies excluding Energy",
+  "Beaten-down stocks that still have positive revenue growth",
 ];
 
-const DEFAULT_FILTERS: Filter[] = [];
+interface UserState { id: string; email: string; metadata: Record<string, any>; }
+interface SavedRow { id: string; name: string; query: string; filters: Filter[]; ranking: string; createdAt?: string; updatedAt?: string; lastRunAt?: string | null; lastResultCount?: number | null; lastResultSymbols: string[]; criteriaFingerprint?: string | null; universe: string; }
+interface PreferenceRow { id: string; field: string; op: Filter["op"]; value: number | string; }
 
-type SavedRow = {
-  id: string; name: string; query: string; filters: Filter[]; ranking: string;
-  createdAt?: string; updatedAt?: string; lastRunAt?: string | null; lastResultCount?: number | null; lastResultSymbols?: string[];
-  criteriaFingerprint?: string; universe?: string;
-};
-type PreferenceRow = Filter & { prefId: string };
-
-type SharedVisibility = "unlisted" | "public";
-
-function safeFilters(raw: unknown): Filter[] { return Array.isArray(raw) ? normalizeFilters(raw as Filter[]) : []; }
-function arraysEqual(a: string[], b: string[]) { return a.length === b.length && a.every((x, i) => x === b[i]); }
+function readPreferences(metadata: Record<string, any> | undefined): PreferenceRow[] {
+  const raw = metadata?.[DEFAULTS_METADATA_KEY];
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((p: any, i: number) => {
+    if (!p || typeof p.field !== "string" || !FIELDS[p.field]) return [];
+    if (!["<", "<=", ">", ">=", "==", "!="].includes(p.op)) return [];
+    if (p.value === undefined || p.value === null || p.value === "") return [];
+    return [{ id: typeof p.id === "string" ? p.id : `pref_${i}`, field: p.field, op: p.op as Filter["op"], value: p.value as number | string }];
+  });
+}
 
 export default function Page() {
-  const params = useSearchParams();
-  const [userId, setUserId] = useState<string | null>(null);
-  const [authEmail, setAuthEmail] = useState<string | null>(null);
-  const [stocks, setStocks] = useState<StockRow[]>([]);
-  const [query, setQuery] = useState("");
-  const [filters, setFilters] = useState<Filter[]>(DEFAULT_FILTERS);
-  const [ranking, setRanking] = useState("marketCap");
-  const [interpretation, setInterpretation] = useState("");
-  const [assumptions, setAssumptions] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [activeSavedId, setActiveSavedId] = useState<string | null>(null);
-  const [saved, setSaved] = useState<SavedRow[]>([]);
-  const [preferences, setPreferences] = useState<PreferenceRow[]>([]);
-  const [saveName, setSaveName] = useState("");
-  const [shareUrl, setShareUrl] = useState("");
-  const [toast, setToast] = useState("");
-  const [tab, setTab] = useState<"screen" | "saved" | "preferences">("screen");
-  const [sort, setSort] = useState<{ col: keyof StockRow; dir: "asc" | "desc" } | null>(null);
+  const [user, setUser] = useState<UserState | null>(null);
+  const [booting, setBooting] = useState(true);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      setUserId(data.session?.user.id ?? null);
-      setAuthEmail(data.session?.user.email ?? null);
-      const meta = data.session?.user.user_metadata;
-      setPreferences(Array.isArray(meta?.screening_defaults) ? meta.screening_defaults : []);
+      const u = data.session?.user;
+      if (u?.email) setUser({ id: u.id, email: u.email, metadata: u.user_metadata ?? {} });
+      setBooting(false);
     });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUserId(session?.user.id ?? null); setAuthEmail(session?.user.email ?? null);
-      const meta = session?.user.user_metadata;
-      setPreferences(Array.isArray(meta?.screening_defaults) ? meta.screening_defaults : []);
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      const u = session?.user;
+      setUser(u?.email ? { id: u.id, email: u.email, metadata: u.user_metadata ?? {} } : null);
     });
-    return () => listener.subscription.unsubscribe();
+    return () => sub.subscription.unsubscribe();
   }, []);
 
-  useEffect(() => {
-    supabase.from("stocks").select("*").then(({ data }) => setStocks((data ?? []) as StockRow[]));
-  }, []);
+  if (booting) return <div style={{ minHeight: "100vh", background: T.bg }} />;
+  if (user) return <><BaseStyle /><Screener user={user} /></>;
+  return <Landing mode="home" onGetStarted={() => { window.location.href = "/account?mode=signup"; }} />;
+}
 
-  useEffect(() => { if (userId) loadSaved(); else setSaved([]); }, [userId]);
+function BaseStyle() {
+  return <style>{`
+    .scr-root { font-family: var(--font-body), 'Inter', system-ui, sans-serif; color: ${T.ink}; background: ${T.bg}; min-height: 100vh; }
+    .mono { font-family: ${FONT_MONO}; font-variant-numeric: tabular-nums; }
+    .disp { font-family: ${FONT_DISPLAY}; }
+    button, select, input, textarea { font-family: inherit; }
+    button { cursor: pointer; }
+    :focus-visible { outline: 2px solid ${T.accent}; outline-offset: 2px; border-radius: 4px; }
+    .row-hover:hover { background: ${T.surfaceAlt}; }
+    .sortable { cursor: pointer; user-select: none; }
+    .sortable:hover { color: ${T.accent} !important; }
+    .btn { font-weight: 550; font-size: 14px; border-radius: 10px; height: 40px; padding: 0 17px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid transparent; transition: background .14s,border-color .14s; }
+    .btn:disabled { opacity: .6; cursor: default; }
+    .btn-primary { background: ${T.accent}; color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: ${T.accentInk}; }
+    .btn-secondary { background: ${T.accentSoft}; color: ${T.accentInk}; border-color: #DADEF6; }
+    .btn-neutral { background: ${T.surface}; color: ${T.inkSoft}; border-color: ${T.border}; }
+    .btn-ghost { background: transparent; color: ${T.accent}; }
+    .btn-sm { height: 34px; font-size: 13px; padding: 0 13px; border-radius: 9px; }
+    .cmdbar { display:flex;align-items:center;gap:12px;background:${T.surface};border:1px solid ${T.borderStrong};border-radius:14px;padding:6px 6px 6px 16px;box-shadow:0 1px 2px rgba(21,23,28,.04); }
+    .cmdbar:focus-within { border-color:${T.accent};box-shadow:0 0 0 3px ${T.accentSoft}; }
+    .cmd-field { position:relative;flex:1;display:flex;align-items:center;min-width:0; }
+    .cmd-field textarea { width:100%;border:none;outline:none;background:transparent;font-size:15.5px;line-height:1.4;color:${T.ink};resize:none;padding:9px 0;max-height:120px; }
+    .ph-loop { position:absolute;left:0;right:8px;top:50%;transform:translateY(-50%);color:${T.inkFaint};font-size:15.5px;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+    @media(max-width:720px){ .user-hide{display:none!important}.cmdbar{align-items:flex-end}.screen-actions{width:100%;justify-content:flex-end} }
+  `}</style>;
+}
+
+function Screener({ user }: { user: UserState }) {
+  const [stocks, setStocks] = useState<StockRow[]>([]);
+  const [input, setInput] = useState("");
+  const [screenQuery, setScreenQuery] = useState("");
+  const [filters, setFilters] = useState<Filter[]>([]);
+  const [ranking, setRanking] = useState("marketCap");
+  const [interp, setInterp] = useState("");
+  const [assumptions, setAssumptions] = useState<string[]>([]);
+  const [results, setResults] = useState<ScreenResult[]>([]);
+  const [sort, setSort] = useState<{ col: keyof StockRow; dir: "asc" | "desc" } | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  const [dataAsOf, setDataAsOf] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [hasRun, setHasRun] = useState(false);
+  const [saved, setSaved] = useState<SavedRow[]>([]);
+  const [activeSavedId, setActiveSavedId] = useState<string | null>(null);
+  const [preferences, setPreferences] = useState<PreferenceRow[]>(() => readPreferences(user.metadata));
+  const [toast, setToast] = useState("");
+  const [dataErr, setDataErr] = useState("");
+  const [conflict, setConflict] = useState("");
+  const stocksRef = useRef<StockRow[]>([]);
+  const preferencesReady = true;
+
+  const flash = (m: string) => { setToast(m); window.setTimeout(() => setToast(""), 2200); };
+  useEffect(() => { stocksRef.current = stocks; }, [stocks]);
+
+  const defaultFilters = useCallback((): Filter[] => preferences.map((p) => ({
+    id: `default_${p.id}`, field: p.field, op: p.op, value: p.value, source: "default" as const,
+  })), [preferences]);
+
+  const syncUrl = (q: string, fs: Filter[], rk: string, push: boolean) => {
+    const url = `${window.location.pathname}?s=${encodeScreen(q, fs, rk)}`;
+    if (push) window.history.pushState({}, "", url);
+    else window.history.replaceState({}, "", url);
+  };
 
   useEffect(() => {
-    const stateParam = params.get("state");
-    if (stateParam) {
-      const decoded = decodeScreen(stateParam);
-      if (decoded) {
-        setQuery(decoded.q); setFilters(decoded.filters); setRanking(decoded.ranking); setInterpretation("Loaded an exact shared screen.");
+    (async () => {
+      const [{ data: stockData, error: stockError }, { data: sv }] = await Promise.all([
+        supabase.from("stocks").select("*"),
+        supabase.from("saved_screens").select("*").order("created_at", { ascending: false }),
+      ]);
+
+      if (stockError) { setDataErr("Could not load the universe."); return; }
+      const rows = (stockData ?? []) as any[];
+      setStocks(rows as StockRow[]); stocksRef.current = rows as StockRow[];
+      setDataAsOf(rows.reduce((m, r) => (r.updated_at && r.updated_at > m ? r.updated_at : m), ""));
+      if (sv) setSaved(sv.map((r: any) => ({ id: r.id, name: r.name, query: r.query, filters: r.filters, ranking: r.ranking, createdAt: r.created_at, updatedAt: r.updated_at, lastRunAt: r.last_run_at, lastResultCount: r.last_result_count, lastResultSymbols: r.last_result_symbols || [], criteriaFingerprint: r.criteria_fingerprint, universe: r.universe || "default" })));
+
+      const s = new URLSearchParams(window.location.search).get("s");
+      const dec = s ? decodeScreen(s) : null;
+      if (dec) {
+        setScreenQuery(dec.q); setFilters(dec.filters); setRanking(dec.ranking);
+        setInterp("Restored a shared screen.");
+        const issue = findFilterConflict(dec.filters); setConflict(issue || "");
+        setResults(issue ? [] : runScreen(rows as StockRow[], dec.filters, dec.ranking, Infinity));
+        setHasRun(true);
       }
-    } else {
-      const q = params.get("q");
-      if (q) { setQuery(q); void parseQuery(q, [], "marketCap", true); }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    })();
   }, []);
 
-  async function loadSaved() {
-    if (!userId) return;
-    const { data } = await supabase.from("saved_screens").select("*").eq("user_id", userId).order("updated_at", { ascending: false });
-    setSaved((data ?? []).map((r: any) => ({
-      id: r.id, name: r.name, query: r.query ?? "", filters: safeFilters(r.filters), ranking: r.ranking ?? "marketCap",
-      createdAt: r.created_at, updatedAt: r.updated_at, lastRunAt: r.last_run_at, lastResultCount: r.last_result_count,
-      lastResultSymbols: r.last_result_symbols ?? [], criteriaFingerprint: r.criteria_fingerprint ?? "", universe: r.universe ?? "default",
-    })));
-  }
+  useEffect(() => {
+    const onPop = () => {
+      const s = new URLSearchParams(window.location.search).get("s");
+      const dec = s ? decodeScreen(s) : null;
+      if (dec) {
+        setScreenQuery(dec.q);
+        const issue = findFilterConflict(dec.filters); setConflict(issue || "");
+        setFilters(dec.filters); setRanking(dec.ranking); setInterp("Restored a previous screen."); setAssumptions([]);
+        setResults(issue ? [] : runScreen(stocksRef.current, dec.filters, dec.ranking, Infinity)); setHasRun(true); setSort(null);
+      }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
-  async function parseQuery(q: string, prev = filters, currentRank = ranking, reset = false) {
-    if (!q.trim()) return;
-    setLoading(true); setToast("");
+  const parseInput = useCallback(async () => {
+    const instruction = input.trim();
+    if (!instruction || loading) return;
+    setLoading(true);
     try {
-      const res = await fetch("/api/parse", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: q, previousFilters: reset ? [] : prev, currentRanking: currentRank, mode: reset ? "new" : (prev.length ? "refine" : "new") }) });
-      if (!res.ok) throw new Error("Could not parse screen");
-      const d = await res.json();
-      setFilters(safeFilters(d.filters)); setRanking(d.ranking || "marketCap"); setInterpretation(d.interpretation || ""); setAssumptions(Array.isArray(d.assumptions) ? d.assumptions : []);
-      if (reset) setActiveSavedId(null);
-    } catch (e) { setToast((e as Error).message); }
-    finally { setLoading(false); }
-  }
+      const mode = hasRun ? "refine" : "new";
+      const res = await fetch("/api/parse", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: instruction, filters: hasRun ? filters : [], ranking, mode }),
+      });
+      const r = await res.json();
+      if (!res.ok || r?.error) { flash(r?.error || "Could not update the screen."); return; }
 
-  async function submitQuery(e?: React.FormEvent) { e?.preventDefault(); await parseQuery(query); }
+      let next = (r.filters || []) as Filter[];
+      const nextRanking = r.ranking || ranking;
+      const nextQuery = hasRun ? screenQuery : instruction;
+      if (!hasRun) next = mergeDefaults(next, defaultFilters());
+      const issue = findFilterConflict(next);
+      setFilters(next); setRanking(nextRanking); setInterp(r.interpretation || ""); setAssumptions(r.assumptions || []);
+      setConflict(issue || ""); setResults(issue ? [] : runScreen(stocks, next, nextRanking, Infinity));
+      setHasRun(true); setSort(null); setShowAll(false); setScreenQuery(nextQuery); setInput("");
+      syncUrl(nextQuery, next, nextRanking, true);
+    } catch {
+      flash("The parse service didn't respond.");
+    } finally { setLoading(false); }
+  }, [input, loading, hasRun, filters, ranking, screenQuery, stocks, defaultFilters]);
 
-  function editFilter(id: string, patch: Partial<Filter>) {
-    setFilters((cur) => normalizeFilters(cur.map((f) => f.id === id ? { ...f, ...patch, source: "user" as const } : f)));
-    setInterpretation("Updated the screen directly.");
-  }
-  function removeFilter(id: string) { setFilters((cur) => cur.filter((f) => f.id !== id)); setInterpretation("Removed a condition."); }
+  const resetScreen = () => {
+    setInput(""); setScreenQuery(""); setFilters([]); setRanking("marketCap"); setInterp(""); setAssumptions([]);
+    setResults([]); setSort(null); setShowAll(false); setHasRun(false); setConflict(""); setActiveSavedId(null);
+    window.history.pushState({}, "", window.location.pathname);
+  };
 
-  const results = useMemo(() => runScreen(stocks, filters, ranking, Infinity), [stocks, filters, ranking]);
-  const displayedResults = useMemo(() => {
-    if (!sort) return results;
-    return [...results].sort((a, b) => {
-      const av = a[sort.col] as any, bv = b[sort.col] as any;
-      if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1;
-      const c = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv));
-      return sort.dir === "asc" ? c : -c;
+  const recompute = (fs: Filter[], rk = ranking) => {
+    const issue = findFilterConflict(fs); setConflict(issue || "");
+    setResults(issue ? [] : runScreen(stocks, fs, rk, Infinity)); setShowAll(false); setSort(null);
+    if (hasRun) syncUrl(screenQuery, fs, rk, false);
+  };
+
+  const editFilter = (id: string, patch: Partial<Filter>) => {
+    setFilters((fs) => {
+      const next = fs.map((f) => f.id === id ? { ...f, ...patch, source: "user" as const } : f);
+      recompute(next); return next;
     });
-  }, [results, sort]);
-  const columns = useMemo(() => buildColumns(filters, ranking), [filters, ranking]);
+  };
+  const removeFilter = (id: string) => setFilters((fs) => { const next = fs.filter((f) => f.id !== id); recompute(next); return next; });
+  const addFilter = (field: string, op: Filter["op"], value: number | string) => {
+    setFilters((fs) => {
+      const candidate: Filter = { id: `${field}_${op}_add_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, field, op, value, source: "user" };
+      const next = fs.some((f) => sameFilter(f, candidate)) ? fs : [...fs, candidate];
+      recompute(next); return next;
+    });
+  };
+  const changeRanking = (rk: string) => { setRanking(rk); recompute(filters, rk); };
 
-  function toggleSort(col: keyof StockRow) { setSort((s) => s?.col === col ? { col, dir: s.dir === "asc" ? "desc" : "asc" } : { col, dir: "asc" }); }
+  const persistPreferences = async (next: PreferenceRow[]) => {
+    const { error } = await supabase.auth.updateUser({ data: { [DEFAULTS_METADATA_KEY]: next } });
+    if (error) return false;
+    setPreferences(next);
+    return true;
+  };
 
-  async function saveScreen() {
-    if (!userId) { location.href = "/account?mode=signup"; return; }
-    const name = saveName.trim() || query.trim().slice(0, 70) || "My screen";
-    const symbols = results.map((r) => r.symbol);
-    const fingerprint = screenFingerprint(filters, ranking, { type: "default" });
-    const payload = { user_id: userId, name, query, filters, ranking, updated_at: new Date().toISOString(), last_run_at: new Date().toISOString(), last_result_count: symbols.length, last_result_symbols: symbols, criteria_fingerprint: fingerprint, universe: "default" };
-    if (activeSavedId) {
-      const current = saved.find((s) => s.id === activeSavedId);
-      const sameCriteria = current?.criteriaFingerprint === fingerprint;
-      const prevSymbols = sameCriteria ? (current?.lastResultSymbols ?? []) : [];
-      const added = sameCriteria ? symbols.filter((x) => !prevSymbols.includes(x)) : [];
-      const removed = sameCriteria ? prevSymbols.filter((x) => !symbols.includes(x)) : [];
-      const { error } = await supabase.from("saved_screens").update({ ...payload, last_added_symbols: added, last_removed_symbols: removed }).eq("id", activeSavedId).eq("user_id", userId);
-      if (error) return setToast(error.message);
-      trackEvent("saved_screen_updated", { screen_id: activeSavedId, match_count: symbols.length });
-      setToast("Screen updated");
-    } else {
-      const { data, error } = await supabase.from("saved_screens").insert({ ...payload, last_added_symbols: [], last_removed_symbols: [] }).select("id").single();
-      if (error) return setToast(error.message);
-      if (data?.id) setActiveSavedId(data.id);
-      trackEvent("saved_screen_created", { match_count: symbols.length });
-      setToast("Screen saved");
+  const saveDefault = async (filter: Filter) => {
+    if (preferences.some((p) => sameFilter(p, filter))) return flash("That default is already saved.");
+    const pref: PreferenceRow = { id: `pref_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, field: filter.field, op: filter.op, value: filter.value };
+    const nextPreferences = [...preferences, pref];
+    if (!(await persistPreferences(nextPreferences))) return flash("Could not save that default.");
+    setFilters((fs) => {
+      const next = fs.map((f) => f.id === filter.id ? { ...f, source: "default" as const } : f);
+      recompute(next); return next;
+    });
+    flash("Saved as a default.");
+  };
+
+  const deleteDefault = async (id: string) => {
+    const pref = preferences.find((p) => p.id === id);
+    const nextPreferences = preferences.filter((p) => p.id !== id);
+    if (!(await persistPreferences(nextPreferences))) return flash("Could not remove that default.");
+    if (pref) {
+      setFilters((fs) => fs.map((f) => f.source === "default" && sameFilter(f, pref) ? { ...f, source: "user" as const } : f));
     }
-    setSaveName(""); await loadSaved();
-  }
+    flash("Default removed.");
+  };
 
-  async function runSaved(s: SavedRow) {
-    setTab("screen"); setActiveSavedId(s.id); setQuery(s.query); setFilters(s.filters); setRanking(s.ranking); setInterpretation("Loaded saved criteria exactly. No re-parsing needed."); setAssumptions([]);
-    const next = runScreen(stocks, s.filters, s.ranking, Infinity).map((r) => r.symbol);
-    const fingerprint = screenFingerprint(s.filters, s.ranking, { type: "default" });
-    const sameCriteria = !s.criteriaFingerprint || s.criteriaFingerprint === fingerprint;
-    const previous = sameCriteria ? (s.lastResultSymbols ?? []) : [];
-    const added = previous.length ? next.filter((x) => !previous.includes(x)) : [];
-    const removed = previous.length ? previous.filter((x) => !next.includes(x)) : [];
-    if (userId) await supabase.from("saved_screens").update({ last_run_at: new Date().toISOString(), last_result_count: next.length, last_result_symbols: next, last_added_symbols: added, last_removed_symbols: removed, criteria_fingerprint: fingerprint, updated_at: new Date().toISOString() }).eq("id", s.id).eq("user_id", userId);
-    trackEvent("saved_screen_run", { screen_id: s.id, match_count: next.length, added: added.length, removed: removed.length });
-    await loadSaved();
-  }
-  async function renameSaved(s: SavedRow) { const name = prompt("Rename screen", s.name)?.trim(); if (!name || !userId) return; const { error } = await supabase.from("saved_screens").update({ name, updated_at: new Date().toISOString() }).eq("id", s.id).eq("user_id", userId); if (error) setToast(error.message); else await loadSaved(); }
-  async function deleteSaved(id: string) { if (!userId || !confirm("Delete this saved screen?")) return; const { error } = await supabase.from("saved_screens").delete().eq("id", id).eq("user_id", userId); if (error) setToast(error.message); else { if (activeSavedId === id) setActiveSavedId(null); await loadSaved(); } }
+  const total = results.length;
+  const displayed = useMemo(() => {
+    let rows = results;
+    if (sort) {
+      const d = sort.dir === "asc" ? 1 : -1;
+      rows = [...rows].sort((a, b) => {
+        const av = a[sort.col] as any, bv = b[sort.col] as any;
+        if (av == null && bv == null) return 0;
+        if (av == null) return 1;
+        if (bv == null) return -1;
+        return (typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv))) * d;
+      });
+    }
+    return rows.slice(0, showAll ? rows.length : 25);
+  }, [results, sort, showAll]);
 
-  async function saveDefault(f: Filter) {
-    if (!userId) { location.href = "/account?mode=signup"; return; }
-    const next: PreferenceRow[] = [...preferences.filter((p) => p.field !== f.field), { ...f, id: `default_${Date.now()}`, prefId: `default_${Date.now()}`, source: "default" }];
-    const { error } = await supabase.auth.updateUser({ data: { screening_defaults: next } });
-    if (error) setToast(error.message); else { setPreferences(next); setToast("Default saved"); }
-  }
-  async function removeDefault(prefId: string) { const next = preferences.filter((p) => p.prefId !== prefId && p.id !== prefId); const { error } = await supabase.auth.updateUser({ data: { screening_defaults: next } }); if (error) setToast(error.message); else setPreferences(next); }
+  const toggleSort = (col: keyof StockRow) => setSort((cur) => (!cur || cur.col !== col ? { col, dir: "desc" } : cur.dir === "desc" ? { col, dir: "asc" } : null));
 
-  async function createSharedScreen(visibility: SharedVisibility) {
-    if (!userId) { location.href = "/account?mode=signup"; return; }
-    const slug = screenSlug(saveName.trim() || query.trim() || "Parse screen");
-    const title = saveName.trim() || query.trim().slice(0, 90) || "Parse screen";
-    const { error } = await supabase.from("shared_screens").insert({ owner_id: userId, source_saved_screen_id: activeSavedId, slug, title, query, filters, ranking, universe: "default", visibility });
-    if (error) return setToast(error.message);
-    const url = `${location.origin}/s/${slug}`; setShareUrl(url); await navigator.clipboard?.writeText(url).catch(() => {});
-    trackEvent(visibility === "public" ? "screen_published" : "screen_shared", { slug, match_count: results.length });
-    setToast(visibility === "public" ? "Public screen published and link copied" : "Share link copied");
-  }
+  const saveScreen = async () => {
+    if (!hasRun) return flash("Build a screen first, then save it.");
+    const existing = activeSavedId ? saved.find((s) => s.id === activeSavedId) : undefined;
+    const name = existing?.name || screenQuery.trim().slice(0, 60) || "Untitled screen";
+    const now = new Date().toISOString();
+    const symbols = results.map((r) => r.symbol);
+    const fingerprint = screenFingerprint(filters, ranking);
+    const payload = { name, query: screenQuery, filters, ranking, updated_at: now, last_run_at: now, last_result_count: symbols.length, last_result_symbols: symbols, last_added_symbols: [], last_removed_symbols: [], criteria_fingerprint: fingerprint, universe: "default" };
+    if (activeSavedId) {
+      const { data, error } = await supabase.from("saved_screens").update(payload).eq("id", activeSavedId).select().single();
+      if (error) return flash("Could not update the saved screen.");
+      setSaved((prev) => prev.map((s) => s.id === activeSavedId ? { ...s, name: data.name, query: data.query, filters: data.filters, ranking: data.ranking, updatedAt: data.updated_at, lastRunAt: data.last_run_at, lastResultCount: data.last_result_count, lastResultSymbols: data.last_result_symbols || [], criteriaFingerprint: data.criteria_fingerprint, universe: data.universe || "default" } : s));
+      flash("Saved screen updated."); trackEvent("saved_screen_updated", { result_count: symbols.length });
+      return;
+    }
+    const { data, error } = await supabase.from("saved_screens").insert({ user_id: user.id, ...payload }).select().single();
+    if (error) return flash("Could not save the screen.");
+    const row: SavedRow = { id: data.id, name: data.name, query: data.query, filters: data.filters, ranking: data.ranking, createdAt: data.created_at, updatedAt: data.updated_at, lastRunAt: data.last_run_at, lastResultCount: data.last_result_count, lastResultSymbols: data.last_result_symbols || [], criteriaFingerprint: data.criteria_fingerprint, universe: data.universe || "default" };
+    setSaved((prev) => [row, ...prev]); setActiveSavedId(data.id); flash("Screen saved."); trackEvent("saved_screen_created", { result_count: symbols.length });
+  };
 
-  function guestShare() {
-    const state = encodeScreen(query, filters, ranking); const url = `${location.origin}/screens/share?state=${state}`;
-    setShareUrl(url); void navigator.clipboard?.writeText(url).catch(() => {}); setToast("Exact screen link copied"); trackEvent("screen_shared", { guest: true, match_count: results.length });
-  }
+  const loadScreen = async (rec: SavedRow) => {
+    setScreenQuery(rec.query || rec.name); setInput(""); setAssumptions([]); setActiveSavedId(rec.id);
+    const issue = findFilterConflict(rec.filters); setConflict(issue || "");
+    const nextResults = issue ? [] : runScreen(stocks, rec.filters, rec.ranking, Infinity);
+    setFilters(rec.filters); setRanking(rec.ranking); setInterp("Loaded a saved screen.");
+    setResults(nextResults); setHasRun(true); setSort(null); setShowAll(false); syncUrl(rec.query || rec.name, rec.filters, rec.ranking, true);
+    const symbols = nextResults.map((r) => r.symbol);
+    const fingerprint = screenFingerprint(rec.filters, rec.ranking, rec.universe || "default");
+    const comparable = rec.criteriaFingerprint === fingerprint && rec.lastResultSymbols.length > 0;
+    const prior = new Set(rec.lastResultSymbols); const current = new Set(symbols);
+    const added = comparable ? symbols.filter((s) => !prior.has(s)) : [];
+    const removed = comparable ? rec.lastResultSymbols.filter((s) => !current.has(s)) : [];
+    const now = new Date().toISOString();
+    const { data } = await supabase.from("saved_screens").update({ last_run_at: now, last_result_count: symbols.length, last_result_symbols: symbols, last_added_symbols: added, last_removed_symbols: removed, criteria_fingerprint: fingerprint, updated_at: now }).eq("id", rec.id).select().single();
+    if (data) setSaved((prev) => prev.map((s) => s.id === rec.id ? { ...s, lastRunAt: data.last_run_at, lastResultCount: data.last_result_count, lastResultSymbols: data.last_result_symbols || [], criteriaFingerprint: data.criteria_fingerprint, updatedAt: data.updated_at } : s));
+    trackEvent("saved_screen_run", { result_count: symbols.length, change_count: added.length + removed.length });
+  };
+  const renameScreen = async (rec: SavedRow) => {
+    const next = window.prompt("Rename saved screen", rec.name)?.trim().slice(0, 80);
+    if (!next || next === rec.name) return;
+    const { error } = await supabase.from("saved_screens").update({ name: next, updated_at: new Date().toISOString() }).eq("id", rec.id);
+    if (error) return flash("Could not rename the screen.");
+    setSaved((prev) => prev.map((s) => s.id === rec.id ? { ...s, name: next } : s)); flash("Screen renamed.");
+  };
+  const deleteScreen = async (id: string) => { await supabase.from("saved_screens").delete().eq("id", id); setSaved((prev) => prev.filter((s) => s.id !== id)); if (activeSavedId === id) setActiveSavedId(null); };
+  const createSharedScreen = async (visibility: "unlisted" | "public") => {
+    if (!hasRun) return;
+    const title = saved.find((s) => s.id === activeSavedId)?.name || screenQuery.trim().slice(0, 80) || "Stock screen";
+    const slug = `${screenSlug(title)}-${(globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)).slice(0, 8)}`;
+    const { error } = await supabase.from("shared_screens").insert({ owner_id: user.id, source_saved_screen_id: activeSavedId, slug, title, query: screenQuery, filters, ranking, universe: "default", visibility });
+    if (error) return flash("Could not create the shared screen.");
+    const url = `${window.location.origin}/s/${slug}`;
+    try { await navigator.clipboard.writeText(url); } catch {}
+    flash(visibility === "public" ? "Published. Public link copied." : "Exact link copied.");
+    trackEvent(visibility === "public" ? "screen_published" : "screen_shared", { method: "persistent_link", filter_count: filters.length });
+  };
 
-  return <div className="app-shell">
-    <style>{styles}</style>
-    <header className="topbar"><a className="brand" href="/"><Logo /><span>Parse</span></a><nav className="topnav"><a href="/screens">Screen ideas</a>{userId ? <><button onClick={() => setTab("saved")}>Saved</button><button onClick={() => setTab("preferences")}>Defaults</button><a href="/account">{authEmail?.split("@")[0] || "Account"}</a></> : <><a href="/account?mode=signin">Sign in</a><a className="btn btn-primary btn-sm" href="/account?mode=signup">Create account</a></>}</nav></header>
-    <main className="main">
-      {tab === "screen" && <>
-        <section className="hero"><div className="eyebrow">Natural-language stock screener</div><h1>Describe the companies you want to find.</h1><p>Parse turns your words into explicit filters you can inspect, change, and run.</p><form onSubmit={submitQuery} className="searchrow"><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="e.g. Large healthcare companies with low P/E" aria-label="Describe your stock screen"/><button className="btn btn-primary" disabled={loading}>{loading ? "Parsing…" : filters.length ? "Refine" : "Build screen"}</button></form><div className="examples">{EXAMPLES.map((x) => <button key={x} onClick={() => { setQuery(x); void parseQuery(x, [], "marketCap", true); }}>{x}</button>)}</div></section>
-        {toast && <div className="toast">{toast}</div>}
-        {(filters.length > 0 || interpretation) && <section className="panel"><div className="panelhead"><div><h2>Your screen</h2>{interpretation && <p>{interpretation}</p>}</div><div className="panelactions">{userId ? <><button className="btn btn-neutral btn-sm" onClick={() => void createSharedScreen("unlisted")}>Share exact</button><button className="btn btn-neutral btn-sm" onClick={() => void createSharedScreen("public")}>Publish</button></> : <button className="btn btn-neutral btn-sm" onClick={guestShare}>Share</button>}</div></div>{assumptions.length > 0 && <div className="assumptions">{assumptions.map((a) => <div key={a}>Assumption: {a}</div>)}</div>}<div className="chips">{filters.map((f) => <FilterChip key={f.id} f={f} onEdit={editFilter} onRemove={removeFilter} onSaveDefault={saveDefault} signedIn={!!userId} />)}</div><div className="ranking"><span>Sort results:</span><select value={ranking} onChange={(e) => setRanking(e.target.value)}>{Object.entries(RANKINGS).map(([k, r]) => <option value={k} key={k}>{r.label}</option>)}</select></div><div className="savebar">{userId && <input value={saveName} onChange={(e) => setSaveName(e.target.value)} placeholder={activeSavedId ? "Update saved screen" : "Optional screen name"}/>}<button className="btn btn-primary" onClick={() => void saveScreen()}>{activeSavedId ? "Update saved screen" : userId ? "Save screen" : "Save screen"}</button>{shareUrl && <input className="shareurl" readOnly value={shareUrl}/>}</div></section>}
-        <Results rows={displayedResults} columns={columns} sort={sort} onSort={toggleSort} />
-      </>}
-      {tab === "saved" && <SavedScreens saved={saved} onLoad={runSaved} onRename={renameSaved} onDelete={deleteSaved} />}
-      {tab === "preferences" && <Preferences preferences={preferences} onDelete={removeDefault} />}
+  return <div className="scr-root">
+    <TopBar email={user.email} onSignOut={() => supabase.auth.signOut()} />
+    <main style={{ maxWidth: 1120, margin: "0 auto", padding: "30px 24px 80px" }}>
+      <section>
+        <h1 className="disp" style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.02em", margin: "0 0 5px" }}>{hasRun ? "Refine this screen" : "Describe the screen you want"}</h1>
+        <p style={{ color: T.inkSoft, fontSize: 14.5, margin: "0 0 16px" }}>{hasRun ? "Add or remove criteria in the same box. Edit a chip directly to change a threshold." : "Plain English becomes explicit filters you can inspect and edit."}</p>
+        <QueryBar value={input} onChange={setInput} onSubmit={parseInput} loading={loading} hasRun={hasRun} onNew={resetScreen} />
+        {dataErr && <div style={{ marginTop: 12, color: T.loss, fontSize: 13.5 }}>{dataErr}</div>}
+        {!dataErr && stocks.length > 0 && <div style={{ marginTop: 11, fontSize: 12.5, color: T.inkFaint }}>S&amp;P 500 and Nasdaq 100 · refreshed daily</div>}
+      </section>
+
+      {hasRun && <section style={{ marginTop: 22 }}><Echo filters={filters} ranking={ranking} interp={interp} assumptions={assumptions} conflict={conflict}
+        onEdit={editFilter} onRemove={removeFilter} onRanking={changeRanking} onAdd={addFilter}
+        onSaveDefault={saveDefault} preferencesReady={preferencesReady} /></section>}
+
+      {hasRun && !conflict && <section style={{ marginTop: 22 }}><Results rows={displayed} total={total} filters={filters} ranking={ranking} sort={sort} onSort={toggleSort}
+        showAll={showAll} onToggleShowAll={() => setShowAll((v) => !v)} dataAsOf={dataAsOf} onSave={saveScreen} saveLabel={activeSavedId ? "Update saved screen" : "Save screen"} onShare={() => createSharedScreen("unlisted")} onPublish={() => createSharedScreen("public")} /></section>}
+
+      <section style={{ marginTop: 30 }}><Saved saved={saved} onLoad={loadScreen} onDelete={deleteScreen} onRename={renameScreen} /></section>
+      <section style={{ marginTop: 30 }}><Preferences preferences={preferences} onDelete={deleteDefault} /></section>
     </main>
+    {toast && <div style={{ position: "fixed", bottom: 22, left: "50%", transform: "translateX(-50%)", background: T.ink, color: "#fff", padding: "10px 18px", borderRadius: 10, fontSize: 14, zIndex: 50 }}>{toast}</div>}
   </div>;
 }
 
-function Results({ rows, columns, sort, onSort }: { rows: StockRow[]; columns: Col[]; sort: { col: keyof StockRow; dir: "asc" | "desc" } | null; onSort: (c: keyof StockRow) => void }) {
-  return <section className="results"><div className="resultshead"><h2>{rows.length} matches</h2><span>Daily-refreshed data</span></div>{rows.length === 0 ? <Empty title="No companies match this screen." body="Try adjusting a threshold or removing a condition." /> : <div className="tablewrap"><table><thead><tr><Th>Company</Th>{columns.map((c) => <Th key={String(c.key)} onClick={() => onSort(c.key)} hot={sort?.col === c.key}>{c.label}{sort?.col === c.key ? (sort.dir === "asc" ? " ↑" : " ↓") : ""}</Th>)}</tr></thead><tbody>{rows.map((r) => <tr key={r.symbol}><td><div className="ticker">{r.symbol}</div><div className="co">{r.name}</div></td>{columns.map((c) => <td key={String(c.key)} className="mono">{c.fmt(r[c.key])}</td>)}</tr>)}</tbody></table></div>}</section>;
+function TopBar({ email, onSignOut }: { email: string; onSignOut: () => void }) {
+  return <div style={{ borderBottom: `1px solid ${T.border}`, background: "rgba(244,245,247,.88)", backdropFilter: "blur(8px)", position: "sticky", top: 0, zIndex: 20 }}><div style={{ maxWidth: 1120, margin: "0 auto", padding: "13px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}><Brand /><div style={{ display: "flex", alignItems: "center", gap: 12 }}><span className="user-hide" style={{ fontSize: 13.5, color: T.inkSoft }}>{email}</span><a href="/about" className="btn btn-ghost btn-sm" style={{ textDecoration: "none" }}>About</a><FeedbackButton className="btn btn-ghost btn-sm" /><button className="btn btn-neutral btn-sm" onClick={onSignOut}>Sign out</button></div></div></div>;
 }
 
-function FilterChip({ f, onEdit, onRemove, onSaveDefault, signedIn }: { f: Filter; onEdit: (id: string, p: Partial<Filter>) => void; onRemove: (id: string) => void; onSaveDefault: (f: Filter) => void; signedIn: boolean }) {
-  const m = FIELDS[f.field]; if (!m) return null;
-  return <div className={`chip ${f.source === "user" ? "chip-user" : f.source === "default" ? "chip-default" : ""}`}><span>{m.label}</span>{m.kind === "cat" ? <><select value={f.op} onChange={(e) => onEdit(f.id, { op: e.target.value as any })}><option value="==">is</option><option value="!=">is not</option></select><select value={String(f.value)} onChange={(e) => onEdit(f.id, { value: e.target.value })}>{m.options?.map((x) => <option key={x}>{x}</option>)}</select></> : <><select value={f.op} onChange={(e) => onEdit(f.id, { op: e.target.value as any })}>{[">", ">=", "<", "<="].map((o) => <option key={o}>{o}</option>)}</select><input type="number" step="any" value={Number(f.value)} onChange={(e) => onEdit(f.id, { value: Number(e.target.value) })}/><span className="unit">{m.unit}</span></>}{signedIn && f.source !== "default" && <button title="Use as default" className="iconbtn" onClick={() => onSaveDefault(f)}>☆</button>}<button title="Remove" className="iconbtn" onClick={() => onRemove(f.id)}>×</button></div>;
+function Brand() {
+  return <div style={{ display: "flex", alignItems: "center", gap: 10 }}><div style={{ width: 26, height: 26, borderRadius: 7, background: T.accent, position: "relative", flexShrink: 0 }}><div style={{ position: "absolute", left: 6, bottom: 6, width: 3, height: 8, background: "#fff", borderRadius: 1 }} /><div style={{ position: "absolute", left: 11.5, bottom: 6, width: 3, height: 13, background: "#fff", borderRadius: 1 }} /><div style={{ position: "absolute", left: 17, bottom: 6, width: 3, height: 5, background: "rgba(255,255,255,.6)", borderRadius: 1 }} /></div><span className="disp" style={{ fontSize: 17, fontWeight: 600 }}>Parse</span></div>;
 }
 
-function SavedScreens({ saved, onLoad, onRename, onDelete }: { saved: SavedRow[]; onLoad: (s: SavedRow) => void; onRename: (s: SavedRow) => void; onDelete: (id: string) => void }) {
+function QueryBar({ value, onChange, onSubmit, loading, hasRun, onNew }: { value: string; onChange: (v: string) => void; onSubmit: () => void; loading: boolean; hasRun: boolean; onNew: () => void }) {
+  const [idx, setIdx] = useState(0);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => { if (value || hasRun) return; const t = window.setInterval(() => setIdx((i) => (i + 1) % EXAMPLES.length), 3400); return () => window.clearInterval(t); }, [value, hasRun]);
+  const grow = () => { const el = taRef.current; if (!el) return; el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 120) + "px"; };
+  return <div><div className="cmdbar"><span style={{ color: T.inkFaint, display: "flex", flexShrink: 0 }} aria-hidden><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.7" /><path d="M20 20l-3.2-3.2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg></span><div className="cmd-field">{!value && <span key={hasRun ? "refine" : idx} className="ph-loop">{hasRun ? "Add or remove a criterion…" : EXAMPLES[idx]}</span>}<textarea ref={taRef} value={value} rows={1} aria-label={hasRun ? "Refine the current screen" : "Describe the screen you want"} onChange={(e) => { onChange(e.target.value); grow(); }} onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onSubmit(); } }} /></div><button className="btn btn-primary" onClick={onSubmit} disabled={loading || !value.trim()}>{loading ? "Reading…" : hasRun ? "Update screen" : "Run"}</button></div>{hasRun && <div className="screen-actions" style={{ display: "flex", justifyContent: "flex-end", marginTop: 9 }}><button className="btn btn-neutral btn-sm" onClick={onNew}>New screen</button></div>}</div>;
+}
+
+function Echo({ filters, ranking, interp, assumptions, conflict, onEdit, onRemove, onRanking, onAdd, onSaveDefault, preferencesReady }: {
+  filters: Filter[]; ranking: string; interp: string; assumptions: string[]; conflict: string;
+  onEdit: (id: string, patch: Partial<Filter>) => void; onRemove: (id: string) => void; onRanking: (rk: string) => void;
+  onAdd: (field: string, op: Filter["op"], value: number | string) => void; onSaveDefault: (f: Filter) => void; preferencesReady: boolean;
+}) {
+  return <section style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: "18px 18px 20px" }}><div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}><div style={{ fontSize: 13, fontWeight: 600, color: T.inkSoft }}>HOW THIS WAS READ</div>{interp && <div style={{ fontSize: 13, color: T.inkFaint }}>{interp}</div>}</div><div style={{ display: "flex", flexWrap: "wrap", gap: 9, marginTop: 15, alignItems: "center" }}>{filters.length === 0 && <span style={{ color: T.inkFaint, fontSize: 14 }}>No filters. Add one below or type another instruction.</span>}{filters.map((f) => <Chip key={f.id} f={f} onEdit={onEdit} onRemove={onRemove} onSaveDefault={onSaveDefault} preferencesReady={preferencesReady} />)}<AddFilter onAdd={onAdd} /></div><div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 18, flexWrap: "wrap" }}><span style={{ fontSize: 13, color: T.inkSoft }}>Rank by</span><select value={ranking} onChange={(e) => onRanking(e.target.value)} style={{ fontSize: 13.5, padding: "6px 10px", borderRadius: 9, border: `1px solid ${T.border}`, background: T.surfaceAlt, color: T.ink }}>{Object.values(RANKINGS).map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}</select><span style={{ marginLeft: "auto", fontSize: 12.5, color: T.inkFaint }}>Direct edits are preserved when you update the screen.</span></div>{conflict && <div style={{ marginTop: 14, padding: "11px 13px", background: "#FFF0EE", borderRadius: 10, color: T.loss, fontSize: 13.5 }}>{conflict} Change or remove one of the filters.</div>}{assumptions.length > 0 && <div style={{ marginTop: 14, padding: "11px 13px", background: T.accentSoft, borderRadius: 10, fontSize: 13.5, color: T.accentInk }}>{assumptions.map((a, i) => <div key={i}>· {a}</div>)}</div>}</section>;
+}
+
+function Chip({ f, onEdit, onRemove, onSaveDefault, preferencesReady }: { f: Filter; onEdit: (id: string, p: Partial<Filter>) => void; onRemove: (id: string) => void; onSaveDefault: (f: Filter) => void; preferencesReady: boolean }) {
+  const [editing, setEditing] = useState(false);
+  const meta = FIELDS[f.field] || { label: f.field, unit: undefined, kind: "num" as const };
+  const isUser = f.source === "user"; const isDefault = f.source === "default";
+  const display = meta.kind === "cat" ? `${meta.label} ${f.op === "!=" ? "is not" : "is"} ${f.value}` : `${meta.label} ${f.op} ${f.value}${meta.unit === "%" ? "%" : ""}`;
+  return <span style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "7px 9px 7px 11px", borderRadius: 9, fontSize: 13.5, background: isDefault ? "#F7F7FC" : isUser ? T.accentSoft : T.surfaceAlt, border: `1px solid ${isDefault ? "#BFC4E8" : isUser ? "#C9CEF3" : T.border}`, color: isUser ? T.accentInk : T.ink }}>
+    {isDefault && <span style={{ fontSize: 10.5, color: T.accentInk, fontWeight: 650, textTransform: "uppercase", letterSpacing: ".04em" }}>Default</span>}
+    {editing && meta.kind === "num" ? <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><select value={f.op} onChange={(e) => onEdit(f.id, { op: e.target.value as Filter["op"] })} style={{ border: `1px solid ${T.border}`, borderRadius: 6, padding: "2px 3px" }}>{["<", "<=", ">", ">=", "=="].map((o) => <option key={o}>{o}</option>)}</select><input autoFocus type="number" value={String(f.value)} onChange={(e) => onEdit(f.id, { value: e.target.value === "" ? "" : Number(e.target.value) })} onBlur={() => setEditing(false)} onKeyDown={(e) => e.key === "Enter" && setEditing(false)} style={{ width: 66, border: `1px solid ${T.border}`, borderRadius: 6, padding: "2px 6px" }} /></span> : <button className="mono" onClick={() => meta.kind === "num" && setEditing(true)} style={{ background: "none", border: "none", padding: 0, color: "inherit", fontSize: 13, cursor: meta.kind === "num" ? "pointer" : "default" }}>{display}</button>}
+    {preferencesReady && !isDefault && <button onClick={() => onSaveDefault(f)} title="Use this filter on future screens" style={{ background: "none", border: "none", padding: "0 2px", color: T.accent, fontSize: 11.5, fontWeight: 600 }}>Save default</button>}
+    <button onClick={() => onRemove(f.id)} aria-label={isDefault ? "Remove default from this screen" : "Remove filter"} title={isDefault ? "Remove from this screen" : "Remove filter"} style={{ background: "none", border: "none", color: T.inkFaint, padding: "0 2px", fontSize: 15 }}>×</button>
+  </span>;
+}
+
+function AddFilter({ onAdd }: { onAdd: (field: string, op: Filter["op"], value: number | string) => void }) {
+  const [open, setOpen] = useState(false); const [field, setField] = useState("pe"); const [op, setOp] = useState<Filter["op"]>("<"); const [value, setValue] = useState(""); const [sector, setSector] = useState(SECTORS[0]);
+  const meta = FIELDS[field]; const categorical = meta.kind === "cat";
+  const submit = () => { if (categorical) { onAdd(field, op === "!=" ? "!=" : "==", sector); setOpen(false); return; } if (value === "" || !Number.isFinite(Number(value))) return; onAdd(field, op, Number(value)); setValue(""); setOpen(false); };
+  if (!open) return <button className="btn btn-neutral btn-sm" onClick={() => setOpen(true)}>+ Add filter</button>;
+  return <span style={{ display: "inline-flex", alignItems: "center", gap: 5, flexWrap: "wrap", padding: "6px 7px", borderRadius: 9, background: T.surfaceAlt, border: `1px solid ${T.borderStrong}` }}><select value={field} onChange={(e) => { const next = e.target.value; setField(next); setOp(FIELDS[next].kind === "cat" ? "==" : "<"); }} style={{ border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px" }}>{Object.values(FIELDS).map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}</select>{categorical ? <><select value={op} onChange={(e) => setOp(e.target.value as Filter["op"])} style={{ border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px" }}><option value="==">is</option><option value="!=">is not</option></select><select value={sector} onChange={(e) => setSector(e.target.value)} style={{ border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px" }}>{SECTORS.map((s) => <option key={s}>{s}</option>)}</select></> : <><select value={op} onChange={(e) => setOp(e.target.value as Filter["op"])} style={{ border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px" }}>{["<", "<=", ">", ">=", "=="].map((o) => <option key={o}>{o}</option>)}</select><input type="number" value={value} onChange={(e) => setValue(e.target.value)} placeholder={meta.unit === "%" ? "%" : "0"} onKeyDown={(e) => e.key === "Enter" && submit()} style={{ width: 68, border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px 6px" }} /></>}<button className="btn btn-primary btn-sm" onClick={submit}>Add</button><button onClick={() => setOpen(false)} style={{ background: "none", border: "none", color: T.inkFaint }}>×</button></span>;
+}
+
+function Results({ rows, total, filters, ranking, sort, onSort, showAll, onToggleShowAll, dataAsOf, onSave, saveLabel, onShare, onPublish }: { rows: ScreenResult[]; total: number; filters: Filter[]; ranking: string; sort: { col: keyof StockRow; dir: "asc" | "desc" } | null; onSort: (c: keyof StockRow) => void; showAll: boolean; onToggleShowAll: () => void; dataAsOf: string; onSave: () => void; saveLabel: string; onShare: () => void; onPublish: () => void }) {
+  const cols = buildColumns(filters, ranking); const activeCols = new Set(filters.map((f) => FIELDS[f.field]?.col).filter(Boolean) as string[]); const arrow = (k: keyof StockRow) => sort?.col === k ? (sort.dir === "asc" ? " ↑" : " ↓") : "";
+  return <section><div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 10 }}><div style={{ display: "flex", alignItems: "baseline", gap: 10 }}><h2 className="disp" style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Results</h2><span className="mono" style={{ fontSize: 13, color: T.inkFaint }}>{total > rows.length ? `top ${rows.length} of ${total}` : `${total} names`} · {sort ? "manual sort" : (RANKINGS[ranking]?.label.toLowerCase() || "")}</span></div><div style={{ display: "flex", gap: 8 }}><button onClick={onShare} className="btn btn-ghost btn-sm">Share</button><button onClick={onPublish} className="btn btn-ghost btn-sm">Publish</button><button onClick={onSave} className="btn btn-secondary btn-sm">{saveLabel}</button></div></div>{rows.length === 0 ? <Empty title="No names match this screen." body="Loosen or remove a filter to widen it." /> : <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}><div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: 640 }}><thead><tr style={{ borderBottom: `1px solid ${T.border}` }}><Th style={{ textAlign: "left", paddingLeft: 16 }}>Ticker</Th><Th style={{ textAlign: "left" }}>Company</Th>{cols.map((c) => <Th key={String(c.key)} style={{ textAlign: "right" }} hot={activeCols.has(c.key as string)} onClick={() => onSort(c.key)}>{c.label}{arrow(c.key)}</Th>)}<Th style={{ textAlign: "right", paddingRight: 16 }} onClick={() => onSort("chg_1w")}>1W{arrow("chg_1w")}</Th></tr></thead><tbody>{rows.map((s) => <tr key={s.symbol} className="row-hover" style={{ borderBottom: `1px solid ${T.border}` }}><td className="mono" style={{ fontWeight: 600, padding: "11px 8px 11px 16px" }}>{s.symbol}</td><td style={{ padding: "11px 8px" }}>{s.name} <span style={{ color: T.inkFaint, fontSize: 12 }}>· {s.sector ?? "—"}</span></td>{cols.map((c) => <td key={String(c.key)} className="mono" style={{ textAlign: "right", padding: "11px 8px", color: activeCols.has(c.key as string) ? T.ink : T.inkSoft, fontWeight: activeCols.has(c.key as string) ? 600 : 400 }}>{c.fmt(s[c.key])}</td>)}<td className="mono" style={{ textAlign: "right", padding: "11px 16px 11px 8px", color: (s.chg_1w ?? 0) >= 0 ? T.gain : T.loss }}>{s.chg_1w == null ? "—" : `${s.chg_1w >= 0 ? "+" : ""}${s.chg_1w.toFixed(1)}%`}</td></tr>)}</tbody></table></div>{total > 25 && <button onClick={onToggleShowAll} style={{ width: "100%", padding: "11px 16px", background: T.surfaceAlt, border: "none", borderTop: `1px solid ${T.border}`, fontSize: 13, fontWeight: 550, color: T.accent }}>{showAll ? "Show top 25" : `Show all ${total}`}</button>}<div style={{ padding: "10px 16px", borderTop: `1px solid ${T.border}`, fontSize: 12, color: T.inkFaint }}>Daily-refreshed data{dataAsOf ? ` · as of ${formatAsOf(dataAsOf)}` : ""} · S&amp;P 500 and Nasdaq 100</div></div>}</section>;
+}
+
+function Saved({ saved, onLoad, onDelete, onRename }: { saved: SavedRow[]; onLoad: (s: SavedRow) => void; onDelete: (id: string) => void; onRename: (s: SavedRow) => void }) {
   return <section><h2 className="disp" style={{ fontSize: 18, fontWeight: 600, margin: "0 0 12px" }}>Saved screens</h2>{saved.length === 0 ? <Empty title="No saved screens yet." body="Build one above, then save it to run it again anytime." /> : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 12 }}>{saved.map((s) => <div key={s.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 15px", display: "flex", flexDirection: "column", gap: 10 }}><div style={{ fontSize: 14, fontWeight: 550 }}>{s.name}</div><div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>{s.filters.slice(0, 3).map((f) => <span key={f.id} className="mono" style={{ fontSize: 11.5, padding: "3px 7px", borderRadius: 6, background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.inkSoft }}>{formatFilter(f)}</span>)}{s.filters.length > 3 && <span style={{ fontSize: 11.5, color: T.inkFaint }}>+{s.filters.length - 3}</span>}</div><div style={{ fontSize: 11.5, color: T.inkFaint }}>{s.lastResultCount == null ? "No baseline yet" : `${s.lastResultCount} matches`}{s.lastRunAt ? ` · Last run ${formatAsOf(s.lastRunAt)}` : ""}</div><div style={{ display: "flex", gap: 8, marginTop: "auto" }}><button className="btn btn-primary btn-sm" onClick={() => onLoad(s)} style={{ flex: 1 }}>Run</button><button className="btn btn-neutral btn-sm" onClick={() => onRename(s)}>Rename</button><button className="btn btn-neutral btn-sm" onClick={() => onDelete(s.id)}>Delete</button></div></div>)}</div>}</section>;
 }
 
@@ -253,21 +433,3 @@ function buildColumns(filters: Filter[], ranking: string): Col[] { const order: 
 function encodeScreen(q: string, filters: Filter[], ranking: string): string { const payload = { q, r: ranking, f: filters.map((f) => [f.field, f.op, f.value, f.source === "user" ? 1 : f.source === "default" ? 2 : 0]) }; return encodeURIComponent(JSON.stringify(payload)); }
 function decodeScreen(s: string): { q: string; ranking: string; filters: Filter[] } | null { try { const j = JSON.parse(decodeURIComponent(s)); const filters: Filter[] = (j.f || []).map((a: any[], i: number) => ({ id: `${a[0]}_${a[1]}_url_${i}`, field: a[0], op: a[1], value: a[2], source: a[3] === 2 ? "default" : a[3] === 1 ? "user" : "ai" })); return { q: j.q || "", ranking: j.r || "marketCap", filters }; } catch { return null; } }
 function formatAsOf(iso: string) { if (!iso) return ""; const d = new Date(iso); return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); }
-
-function Logo() { return <div className="logo"><span/><span/><span/></div>; }
-
-const styles = `
-:root{--radius:12px}
-*{box-sizing:border-box}
-body{margin:0;background:${T.bg};color:${T.ink}}
-.app-shell{min-height:100vh;font-family:var(--font-body),'Inter',system-ui,sans-serif;background:${T.bg}}
-.topbar{height:60px;border-bottom:1px solid ${T.border};display:flex;align-items:center;justify-content:space-between;padding:0 24px;background:${T.surface};position:sticky;top:0;z-index:20}
-.brand{display:flex;align-items:center;gap:9px;text-decoration:none;color:${T.ink};font-family:var(--font-display),'Instrument Sans',system-ui,sans-serif;font-size:17px;font-weight:600}.logo{width:26px;height:26px;border-radius:7px;background:${T.accent};position:relative}.logo span{position:absolute;bottom:6px;width:3px;border-radius:1px;background:white}.logo span:nth-child(1){left:6px;height:8px}.logo span:nth-child(2){left:11.5px;height:13px}.logo span:nth-child(3){left:17px;height:5px;opacity:.6}
-.topnav{display:flex;align-items:center;gap:5px}.topnav>a,.topnav>button{font-family:inherit;font-size:13.5px;color:${T.inkSoft};text-decoration:none;background:none;border:0;padding:7px 9px;cursor:pointer;border-radius:8px}.topnav>a:hover,.topnav>button:hover{background:${T.surfaceAlt};color:${T.ink}}
-.main{max-width:1100px;margin:0 auto;padding:38px 24px 70px}.hero{max-width:760px;margin-bottom:26px}.eyebrow{color:${T.accent};font-size:12px;font-weight:650;letter-spacing:.07em;text-transform:uppercase;margin-bottom:10px}.hero h1,.disp{font-family:var(--font-display),'Instrument Sans',system-ui,sans-serif}.hero h1{font-size:34px;line-height:1.12;letter-spacing:-.025em;margin:0 0 10px;font-weight:600}.hero p{color:${T.inkSoft};font-size:15.5px;line-height:1.5;margin:0 0 18px}.searchrow{display:flex;gap:9px}.searchrow input{flex:1;min-width:0;height:44px;border:1px solid ${T.borderStrong};border-radius:11px;padding:0 13px;font:inherit;font-size:14.5px;background:${T.surface};color:${T.ink};outline:none}.searchrow input:focus{border-color:${T.accent};box-shadow:0 0 0 3px ${T.accentSoft}}.examples{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}.examples button{border:0;background:transparent;color:${T.inkSoft};font:inherit;font-size:12.5px;cursor:pointer;padding:3px 0;margin-right:7px}.examples button:hover{color:${T.accent}}
-.btn{height:40px;padding:0 16px;border-radius:10px;border:1px solid transparent;font:inherit;font-size:14px;font-weight:550;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;text-decoration:none}.btn-primary{background:${T.accent};color:white}.btn-primary:hover{background:${T.accentInk}}.btn-primary:disabled{opacity:.55;cursor:default}.btn-neutral{background:${T.surface};border-color:${T.border};color:${T.inkSoft}}.btn-neutral:hover{border-color:${T.borderStrong};color:${T.ink}.btn-sm{height:34px;padding:0 12px;font-size:13px}
-.panel{background:${T.surface};border:1px solid ${T.border};border-radius:15px;padding:19px;margin-bottom:22px}.panelhead{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}.panelhead h2{font-family:var(--font-display),'Instrument Sans',system-ui,sans-serif;font-size:17px;font-weight:600;margin:0 0 3px}.panelhead p{font-size:13px;color:${T.inkSoft};margin:0}.panelactions{display:flex;gap:6px}.assumptions{font-size:12.5px;color:${T.amber};margin:10px 0 0}.chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:14px}.chip{display:flex;align-items:center;gap:5px;border:1px solid ${T.border};border-radius:9px;background:${T.surfaceAlt};padding:5px 7px 5px 9px;font-size:12.5px}.chip>span:first-child{font-weight:550}.chip select,.chip input{font:inherit;font-size:12px;border:1px solid ${T.border};border-radius:6px;background:white;color:${T.ink};height:27px;padding:0 5px}.chip input{width:72px}.unit{color:${T.inkFaint};font-size:11px}.chip-user{border-color:#B8C0E8;background:#F5F6FC}.chip-default{border-style:dashed}.iconbtn{border:0;background:none;color:${T.inkFaint};cursor:pointer;font-size:15px;padding:2px}.iconbtn:hover{color:${T.ink}.ranking{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:12.5px;color:${T.inkSoft}.ranking select{font:inherit;border:1px solid ${T.border};border-radius:7px;padding:5px 7px;background:white}.savebar{display:flex;gap:8px;margin-top:14px;align-items:center;flex-wrap:wrap}.savebar>input:not(.shareurl){height:38px;border:1px solid ${T.borderStrong};border-radius:9px;padding:0 10px;font:inherit;min-width:210px}.shareurl{height:34px;flex:1;min-width:200px;border:1px solid ${T.border};border-radius:8px;padding:0 9px;font-size:12px;color:${T.inkSoft}}
-.results{margin-top:10px}.resultshead{display:flex;justify-content:space-between;align-items:baseline;margin:0 0 9px}.resultshead h2{font-family:var(--font-display),'Instrument Sans',system-ui,sans-serif;font-size:17px;font-weight:600;margin:0}.resultshead span{font-size:11.5px;color:${T.inkFaint}.tablewrap{background:${T.surface};border:1px solid ${T.border};border-radius:13px;overflow:auto}.tablewrap table{border-collapse:collapse;width:100%;min-width:680px}.tablewrap th{text-align:right;border-bottom:1px solid ${T.border};background:${T.surfaceAlt}.tablewrap th:first-child{text-align:left}.sortable{cursor:pointer}.tablewrap td{padding:10px 8px;border-bottom:1px solid ${T.border};text-align:right;font-size:13px}.tablewrap td:first-child{text-align:left;padding-left:12px}.tablewrap tr:last-child td{border-bottom:0}.ticker{font-family:var(--font-mono),'JetBrains Mono',monospace;font-size:12.5px;font-weight:650}.co{font-size:11.5px;color:${T.inkSoft};margin-top:2px;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mono{font-family:var(--font-mono),'JetBrains Mono',monospace}
-.toast{font-size:13px;color:${T.accentInk};background:${T.accentSoft};border-radius:9px;padding:9px 11px;margin:0 0 12px;display:inline-block}
-@media(max-width:720px){.topbar{padding:0 14px}.topnav>a:not(:last-child),.topnav>button{display:none}.main{padding:28px 14px 60px}.hero h1{font-size:29px}.searchrow{flex-direction:column}.searchrow .btn{width:100%}.panelhead{flex-direction:column}.panelactions{width:100%}.savebar{align-items:stretch}.savebar>*{width:100%!important}.tablewrap{margin-left:-14px;margin-right:-14px;border-radius:0;border-left:0;border-right:0}}
-`;
