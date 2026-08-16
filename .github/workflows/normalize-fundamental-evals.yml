@@ -1,0 +1,72 @@
+name: normalize-fundamental-evals
+
+on:
+  push:
+    branches: [agent/long-term-fundamentals]
+    paths:
+      - ".github/workflows/normalize-fundamental-evals.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  normalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/long-term-fundamentals
+          fetch-depth: 0
+      - name: Restore compact eval formatting and apply focused changes
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess
+
+          def from_main(path):
+              return subprocess.check_output(["git", "show", f"origin/main:{path}"], text=True)
+
+          cases = from_main("eval/cases.json")
+          new_lines = [
+            '    {"query":"ROIC above 12%","expect":{"filters":[{"field":"roic","op":">","value":12}],"filterCount":1}},',
+            '    {"query":"Operating margin above 15%","expect":{"filters":[{"field":"operatingMargin","op":">","value":15}],"filterCount":1}},',
+            '    {"query":"FCF margin over 10%","expect":{"filters":[{"field":"fcfMargin","op":">","value":10}],"filterCount":1}},',
+            '    {"query":"Free cash flow yield above 3%","expect":{"filters":[{"field":"fcfYield","op":">","value":3}],"filterCount":1}},',
+            '    {"query":"Debt to equity below 1","expect":{"filters":[{"field":"debtEquity","op":"<","value":1}],"filterCount":1}},',
+            '    {"query":"Interest coverage above 5","expect":{"filters":[{"field":"interestCoverage","op":">","value":5}],"filterCount":1}},',
+            '    {"query":"3-year revenue growth above 8%","expect":{"filters":[{"field":"revGrowth3Y","op":">","value":8}],"filterCount":1}},',
+            '    {"query":"3-year EPS growth above 10%","expect":{"filters":[{"field":"epsGrowth3Y","op":">","value":10}],"filterCount":1}},',
+            '    {"query":"EV/EBITDA under 15","expect":{"filters":[{"field":"evEbitda","op":"<","value":15}],"filterCount":1}},',
+            '    {"query":"ROIC above 10%, FCF margin above 8%, and debt/equity below 1","expect":{"filters":[{"field":"roic","op":">","value":10},{"field":"fcfMargin","op":">","value":8},{"field":"debtEquity","op":"<","value":1}],"filterCount":3}},',
+            '    {"query":"Remove ROIC","mode":"refine","previous":[{"field":"roic","op":">","value":10},{"field":"pe","op":"<","value":25}],"expect":{"filters":[{"field":"pe","op":"<","value":25}],"filterCount":1},"reject":[{"field":"roic"}]}',
+          ]
+          marker = "\n  ]\n}"
+          if marker not in cases:
+              raise SystemExit("cases closing marker not found")
+          cases = cases.replace(marker, ",\n" + "\n".join(new_lines) + marker, 1)
+          Path("eval/cases.json").write_text(cases)
+
+          release = from_main("eval/release-regressions.json")
+          replacements = {
+            '{"query":"ROIC above 15%","expect":{"filterCount":0,"ranking":"marketCap"},"requireAssumptions":true,"exactFilters":true,"critical":true}': '{"query":"ROIC above 15%","expect":{"filters":[{"field":"roic","op":">","value":15}],"filterCount":1,"ranking":"marketCap"},"exactFilters":true,"critical":true}',
+            '{"query":"P/E under 20 and ROIC above 15%","expect":{"filters":[{"field":"pe","op":"<","value":20}],"filterCount":1},"requireAssumptions":true,"exactFilters":true,"critical":true}': '{"query":"P/E under 20 and ROIC above 15%","expect":{"filters":[{"field":"pe","op":"<","value":20},{"field":"roic","op":">","value":15}],"filterCount":2},"exactFilters":true,"critical":true}',
+            '{"query":"Add ROIC above 15%","mode":"refine","previous":[{"field":"pe","op":"<","value":20}],"expect":{"filters":[{"field":"pe","op":"<","value":20}],"filterCount":1},"requireAssumptions":true,"exactFilters":true,"critical":true}': '{"query":"Add ROIC above 15%","mode":"refine","previous":[{"field":"pe","op":"<","value":20}],"expect":{"filters":[{"field":"pe","op":"<","value":20},{"field":"roic","op":">","value":15}],"filterCount":2},"exactFilters":true,"critical":true}',
+          }
+          for old, new in replacements.items():
+              if old not in release:
+                  raise SystemExit(f"release target missing: {old[:50]}")
+              release = release.replace(old, new, 1)
+          Path("eval/release-regressions.json").write_text(release)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run test:p0-parser
+      - name: Commit focused eval diff
+        run: |
+          git config user.name "drmaganti"
+          git config user.email "ram.maganti@outlook.com"
+          git add eval/cases.json eval/release-regressions.json
+          git commit -m "Keep fundamentals regression diff focused"
+          git push origin HEAD:agent/long-term-fundamentals
