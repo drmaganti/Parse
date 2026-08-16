@@ -26,7 +26,7 @@ GitHub Action (nightly)                Next.js on Vercel
 - **Supabase free** — Postgres holds the cached universe; Auth handles accounts;
   Row Level Security scopes saved screens to their owner.
 - **GitHub Actions** — nightly ingestion. Same pattern as the value-screener.
-- **Groq (llama-3.3-70b)** — server-side NL→filter parsing (slice 2).
+- **Groq (llama-3.3-70b)** — server-side NL→filter parsing (slice 2). The shared field vocabulary includes long-term fundamentals such as ROIC, operating and FCF margins, FCF yield, debt/equity, interest coverage, 3-year revenue and EPS growth, and EV/EBITDA, so users can express these directly in natural-language screens.
 
 ## What's in this slice (slice 1: data foundation)
 
