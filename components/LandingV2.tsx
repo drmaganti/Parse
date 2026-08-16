@@ -4,6 +4,7 @@ import React from "react";
 import ProductDemoV2 from "./ProductDemoV2";
 import FeedbackButton from "./FeedbackButton";
 import { PORTFOLIO_URL, GITHUB_URL } from "../lib/site";
+import { trackEvent } from "../lib/analytics";
 
 const T = { bg: "#F4F5F7", surface: "#FFFFFF", surfaceAlt: "#FAFBFC", border: "#E6E8EC", ink: "#15171C", inkSoft: "#565C67", accent: "#2C36A8", accentInk: "#232A85" };
 const DISP = "'Space Grotesk', system-ui, sans-serif";
@@ -30,13 +31,14 @@ export default function LandingV2() {
       .ln2-sm{height:34px;font-size:13.5px;padding:0 14px;border-radius:9px}.ln2-primary{background:${T.accent};color:#fff}.ln2-primary:hover{background:${T.accentInk}}
       .ln2-ghost{background:transparent;color:${T.accent}}.ln2-ghost:hover{background:#ECEEFA}.ln2-neutral{background:${T.surface};color:${T.inkSoft};border-color:${T.border}}.ln2-neutral:hover{border-color:#D4D8DF}
       .ln2-link{background:none;border:none;color:${T.accent};cursor:pointer;font-family:inherit;font-size:14px;padding:0;text-decoration:none}.ln2-hero{display:grid;grid-template-columns:1.05fr .95fr;gap:40px;align-items:center}.ln2-cards{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:12px}
-      @media(max-width:760px){.ln2-hero{grid-template-columns:1fr;gap:28px}.ln2-cards{grid-template-columns:1fr}.ln2-signin{display:none}}
+      @media(max-width:760px){.ln2-hero{grid-template-columns:1fr;gap:28px}.ln2-cards{grid-template-columns:1fr}.ln2-signin,.ln2-investor-nav{display:none}}
     `}</style>
 
     <header style={{ borderBottom: `1px solid ${T.border}` }}>
       <div style={{ maxWidth: 1000, margin: "0 auto", padding: "14px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <a href="/" style={{ display: "inline-flex", alignItems: "center", gap: 10, textDecoration: "none", color: T.ink }}><Logo /><span style={{ fontFamily: DISP, fontSize: 17, fontWeight: 600 }}>Parse</span></a>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <a href="/investors" className="ln2-btn ln2-ghost ln2-sm ln2-investor-nav" onClick={() => trackEvent("investor_hub_clicked", { placement: "header" })}>Investors</a>
           <a href="/methodology" className="ln2-btn ln2-ghost ln2-sm">How it works</a>
           <FeedbackButton className="ln2-btn ln2-ghost ln2-sm" />
           <a href="/account?mode=signin" className="ln2-btn ln2-neutral ln2-sm ln2-signin">Sign in</a>
@@ -57,6 +59,12 @@ export default function LandingV2() {
       </div>
 
       <div className="ln2-cards">{FEATURES.map((feature) => <div key={feature.title} style={{ border: `1px solid ${T.border}`, borderRadius: 12, padding: 18, background: T.surface }}><div style={{ fontFamily: DISP, fontSize: 15, fontWeight: 600, color: T.accent, marginBottom: 6 }}>{feature.title}</div><div style={{ fontSize: 14.5, lineHeight: 1.45, color: T.inkSoft }}>{feature.line}</div></div>)}</div>
+
+      <section style={{ marginTop: 44, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: "22px 24px", maxWidth: 760 }}>
+        <div style={{ fontFamily: DISP, fontSize: 21, fontWeight: 600, letterSpacing: "-0.02em", marginBottom: 8 }}>Screen famous investor portfolios</div>
+        <p style={{ color: T.inkSoft, fontSize: 14.5, lineHeight: 1.55, margin: "0 0 14px", maxWidth: 680 }}>Explore reported holdings from Warren Buffett, Cathie Wood, Bill Ackman, Michael Burry, Stanley Druckenmiller, and Ray Dalio—then filter them in plain English.</p>
+        <a href="/investors" className="ln2-link" onClick={() => trackEvent("investor_hub_clicked", { placement: "home_discovery" })}>Explore investor portfolios →</a>
+      </section>
 
       <div style={{ margin: "44px 0 12px", maxWidth: 680 }}>
         <div style={{ fontFamily: DISP, fontSize: 21, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.3 }}>The hard part isn’t using a stock screener. It’s knowing what to screen for.</div>
