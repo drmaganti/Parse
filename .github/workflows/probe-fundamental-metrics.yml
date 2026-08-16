@@ -22,10 +22,7 @@ jobs:
             if (!r.ok) throw new Error(`Finnhub ${r.status}`);
             const d = await r.json();
             const metric = d.metric || {};
-            const terms = /(return|roic|operating|margin|cash|free|debt|interest|revenue|sales|eps|earnings|ebitda|enterprise|ev)/i;
-            const rows = Object.keys(metric).filter(k => terms.test(k)).sort().map(k => `${k}=${metric[k]}`);
-            console.log(rows.join('\n'));
-            console.log('\nSERIES ANNUAL KEYS');
-            console.log(Object.keys(d.series?.annual || {}).filter(k => terms.test(k)).sort().join('\n'));
+            for (const k of ['operatingMarginTTM','totalDebt/totalEquityQuarterly','netInterestCoverageTTM','revenueGrowth3Y','epsGrowth3Y','evEbitdaTTM','enterpriseValue','currentEv/freeCashFlowTTM','marketCapitalization']) console.log(`${k}=${metric[k]}`);
+            for (const k of ['roic','fcfMargin']) console.log(`${k} series=${JSON.stringify(d.series?.annual?.[k] || [])}`);
           }).catch(e => { console.error(e); process.exit(1); });
           NODE
