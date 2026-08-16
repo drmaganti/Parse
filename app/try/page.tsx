@@ -56,11 +56,11 @@ export default function TryPage() {
       let rows = (data ?? []) as StockRow[];
       let nextUniverse = exact?.universe;
       if (collectionSlug) {
-        const { data: holdings } = await supabase.from("investor_holdings").select("ticker,report_date").eq("collection_slug", collectionSlug).order("report_date", { ascending: false }).limit(250);
+        const { data: holdings } = await supabase.from("investor_holdings").select("ticker,report_date").eq("collection_slug", collectionSlug).order("report_date", { ascending: false }).limit(2000);
         const latest = holdings?.[0]?.report_date;
         const symbols = new Set((holdings || []).filter((h: any) => h.report_date === latest && h.ticker).map((h: any) => h.ticker));
         rows = rows.filter((s) => symbols.has(s.symbol));
-        nextUniverse = { type: "collection", slug: collectionSlug, label: exact?.universe?.label || (collectionSlug === "warren-buffett" ? "Berkshire Hathaway reported holdings" : collectionSlug) };
+        nextUniverse = { type: "collection", slug: collectionSlug, label: exact?.universe?.label || (collectionSlug === "warren-buffett" ? "Berkshire Hathaway reported holdings" : collectionSlug === "bill-ackman" ? "Pershing Square reported holdings" : collectionSlug === "cathie-wood" ? "ARK Innovation ETF (ARKK) holdings" : collectionSlug === "michael-burry" ? "Scion Asset Management reported holdings" : collectionSlug === "stanley-druckenmiller" ? "Duquesne Family Office reported holdings" : collectionSlug === "ray-dalio" ? "Bridgewater Associates reported holdings" : collectionSlug) };
         setUniverseLabel(nextUniverse.label || collectionSlug); setUniverse(nextUniverse);
       }
       setStocks(rows);
@@ -190,7 +190,7 @@ export default function TryPage() {
     <main style={{ maxWidth: 960, margin: "0 auto", padding: "36px 24px 72px" }}>
       <section style={{ maxWidth: 760 }}>
         <h1 style={{ fontFamily: DISP, fontSize: 28, margin: "0 0 6px", letterSpacing: "-0.02em" }}>{hasRun ? "Refine this screen" : "Describe the screen you want"}</h1>
-        <p style={{ color: T.inkSoft, fontSize: 14.5, margin: "0 0 16px" }}>{hasRun ? "Add or remove a criterion below. Edit a chip directly to change a number." : "Try three screen updates without creating an account. Current universe: {universeLabel}, refreshed daily."}</p>
+        <p style={{ color: T.inkSoft, fontSize: 14.5, margin: "0 0 16px" }}>{hasRun ? "Add or remove a criterion below. Edit a chip directly to change a number." : `Try three screen updates without creating an account. Current universe: ${universeLabel}, refreshed daily.`}</p>
         <textarea className="p-query" value={input} onChange={(e) => setInput(e.target.value)} placeholder={hasRun ? "Example: also require revenue growth above 10%" : "Example: large companies with low P/E ratios"} onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); execute(); } }} />
         <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}><span style={{ color: T.inkSoft, fontSize: 12.5 }}>{runs}/3 guest updates used</span><div style={{ display: "flex", gap: 8 }}>{hasRun && <button className="p-btn-neutral" onClick={resetScreen}>New screen</button>}<button className="p-btn" onClick={execute} disabled={!stocks.length || loading || limitReached || !input.trim()}>{loading ? "Reading…" : limitReached ? "Guest limit reached" : hasRun ? "Update screen" : "Run screen"}</button></div></div>
         {error && <div style={{ color: T.loss, marginTop: 10, fontSize: 13.5 }}>{error}</div>}
