@@ -13,13 +13,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Revalidate homepage cache
-        run: |
-          set -euo pipefail
-          code=$(curl -sS -X POST -o revalidate.json -w '%{http_code}' https://getparse.app/api/internal/revalidate-home)
-          echo "REVALIDATE HTTP $code"
-          cat revalidate.json
-          test "$code" = "200"
       - name: Install browser verifier
         run: |
           npm install --no-save playwright@1.55.0
@@ -31,7 +24,7 @@ jobs:
           (async () => {
             const browser = await chromium.launch({ headless: true });
             const page = await browser.newPage();
-            const response = await page.goto('https://getparse.app/?verify=8631d5fce941979559fe004d93eee8765e7e4230', { waitUntil: 'domcontentloaded', timeout: 30000 });
+            const response = await page.goto('https://getparse.app/?verify=231b12b13880dff5f339e80527ab9116e24da198', { waitUntil: 'domcontentloaded', timeout: 30000 });
             await page.getByRole('link', { name: 'Investors', exact: true }).waitFor({ state: 'visible', timeout: 20000 });
             await page.getByText('Screen famous investor portfolios', { exact: true }).waitFor({ state: 'visible', timeout: 20000 });
             const navHref = await page.getByRole('link', { name: 'Investors', exact: true }).getAttribute('href');
