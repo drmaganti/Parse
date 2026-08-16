@@ -1,0 +1,28 @@
+name: repair-technology-sectors
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "lib/finnhub.ts"
+      - "scripts/repair-technology-sectors.ts"
+      - ".github/workflows/repair-technology-sectors.yml"
+  workflow_dispatch: {}
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - name: Repair cached Technology sector classifications
+        run: npx tsx scripts/repair-technology-sectors.ts
+        env:
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
