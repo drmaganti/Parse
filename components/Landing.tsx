@@ -69,6 +69,7 @@ export default function Landing({ mode, onGetStarted }: { mode: "home" | "about"
           </a>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <a href="/screens" className="ln-btn ln-ghost ln-sm ln-screen-nav">Screen ideas</a>
+            <a href="/investors" className="ln-btn ln-ghost ln-sm ln-screen-nav" onClick={() => trackEvent("investor_hub_clicked", { placement: "header" })}>Investors</a>
             <a href="/methodology" className="ln-btn ln-ghost ln-sm">How it works</a>
             <FeedbackButton className="ln-btn ln-ghost ln-sm" />
             <a href="/account?mode=signin" className="ln-btn ln-neutral ln-sm ln-signin">Sign in</a>
@@ -114,6 +115,14 @@ export default function Landing({ mode, onGetStarted }: { mode: "home" | "about"
           <div className="ln-cards">
             {SCREEN_IDEAS.map(([slug, title, line]) => <a key={slug} href={`/screens/${slug}`} className="ln-screen-card" onClick={() => trackEvent("public_screen_clicked", { slug, placement: "home" })}><div style={{ fontFamily: DISP, fontSize: 15, fontWeight: 600, marginBottom: 6 }}>{title}</div><div style={{ fontSize: 13.5, lineHeight: 1.45, color: T.inkSoft }}>{line}</div><div style={{ marginTop: 10, color: T.accent, fontSize: 13.5 }}>See the screen →</div></a>)}
           </div>
+        </section>
+
+        <section style={{ marginTop: 44, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: "22px 24px", maxWidth: 760 }}>
+          <div style={{ fontFamily: DISP, fontSize: 21, fontWeight: 600, letterSpacing: "-0.02em", marginBottom: 8 }}>Screen famous investor portfolios</div>
+          <p style={{ color: T.inkSoft, fontSize: 14.5, lineHeight: 1.55, margin: "0 0 14px", maxWidth: 680 }}>
+            Explore reported holdings from Warren Buffett, Cathie Wood, Bill Ackman, Michael Burry, Stanley Druckenmiller, and Ray Dalio—then filter them in plain English.
+          </p>
+          <a href="/investors" className="ln-link" onClick={() => trackEvent("investor_hub_clicked", { placement: "home_discovery" })}>Explore investor portfolios →</a>
         </section>
 
         <div style={{ margin: "44px 0 12px", maxWidth: 680 }}>
