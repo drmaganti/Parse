@@ -26,11 +26,11 @@ create index if not exists shared_screens_owner_idx on public.shared_screens (ow
 create index if not exists shared_screens_public_idx on public.shared_screens (visibility, created_at desc);
 alter table public.shared_screens enable row level security;
 drop policy if exists "public shared screens read" on public.shared_screens;
-create policy "public shared screens read" on public.shared_screens for select using (visibility = 'public');
+create policy "public shared screens read" on public.shared_screens for select to anon, authenticated using (visibility = 'public');
 drop policy if exists "own shared screens read" on public.shared_screens;
-create policy "own shared screens read" on public.shared_screens for select using (auth.uid() = owner_id);
+create policy "own shared screens read" on public.shared_screens for select to authenticated using ((select auth.uid()) = owner_id);
 drop policy if exists "own shared screens write" on public.shared_screens;
-create policy "own shared screens write" on public.shared_screens for all using (auth.uid() = owner_id) with check (auth.uid() = owner_id);
+create policy "own shared screens write" on public.shared_screens for all to authenticated using ((select auth.uid()) = owner_id) with check ((select auth.uid()) = owner_id);
 
 create table if not exists public.investor_holdings (
   id uuid primary key default gen_random_uuid(),
@@ -54,4 +54,4 @@ create table if not exists public.investor_holdings (
 create index if not exists investor_holdings_collection_idx on public.investor_holdings (collection_slug, report_date desc, value_usd desc);
 alter table public.investor_holdings enable row level security;
 drop policy if exists "investor holdings read" on public.investor_holdings;
-create policy "investor holdings read" on public.investor_holdings for select using (true);
+create policy "investor holdings read" on public.investor_holdings for select to anon, authenticated using (true);
