@@ -6,6 +6,7 @@ type Case = {
   name: string;
   query: string;
   expected?: Expected[];
+  forbidden?: Expected[];
   absentFields?: string[];
   assumption?: RegExp;
 };
@@ -35,10 +36,14 @@ const cases: Case[] = [
   { name: "dividend grower no invented yield", query: "Dividend growers with payout ratio below 60%", expected: [{ field: "payoutRatio", op: "<", value: 60 }], absentFields: ["divYield", "divGrowth5Y"], assumption: /dividend grow/i },
   { name: "dividend stock no invented yield", query: "Dividend stocks with payout ratio below 50% and P/E below 20", expected: [{ field: "payoutRatio", op: "<", value: 50 }, { field: "pe", op: "<", value: 20 }], absentFields: ["divYield"] },
   { name: "low beta remains ambiguous", query: "Income stocks with low beta", absentFields: ["beta", "divYield"], assumption: /low beta/i },
-  { name: "growth stock uses disclosed Parse default", query: "Growth stocks with low debt", expected: [{ field: "revGrowth", op: ">", value: 15 }], absentFields: ["revGrowth3Y", "debtEquity"], assumption: /growth stock.*15%.*Parse.*default/i },
-  { name: "explicit revenue growth overrides growth-stock default", query: "Growth stocks with revenue growth above 25%", expected: [{ field: "revGrowth", op: ">", value: 25 }], absentFields: ["revGrowth3Y"] },
+  { name: "growth stock uses disclosed Parse default", query: "Growth stocks with low debt", expected: [{ field: "revGrowth", op: ">", value: 15 }, { field: "debtEquity", op: "<", value: 1 }], absentFields: ["revGrowth3Y"], assumption: /growth stock.*15%.*Parse.*default/i },
+  { name: "explicit revenue growth overrides growth-stock default", query: "Growth stocks with revenue growth above 25%", expected: [{ field: "revGrowth", op: ">", value: 25 }], forbidden: [{ field: "revGrowth", op: ">", value: 15 }], absentFields: ["revGrowth3Y"] },
   { name: "explicit 3Y growth replaces growth-stock default", query: "Growth stocks with 3-year revenue CAGR above 12%", expected: [{ field: "revGrowth3Y", op: ">", value: 12 }], absentFields: ["revGrowth"] },
   { name: "explicit EPS growth replaces growth-stock default", query: "Growth stocks with 3Y EPS CAGR above 10%", expected: [{ field: "epsGrowth3Y", op: ">", value: 10 }], absentFields: ["revGrowth"] },
+  { name: "common concept defaults compose", query: "Profitable tech companies growing revenue over 20% with low debt and a reasonable valuation", expected: [{ field: "operatingMargin", op: ">", value: 0 }, { field: "sector", op: "==", value: "Technology" }, { field: "revGrowth", op: ">", value: 20 }, { field: "debtEquity", op: "<", value: 1 }, { field: "pe", op: "<", value: 25 }], assumption: /profitable.*operating margin.*default.*low debt.*below 1.*default.*reasonable valuation.*P\/E below 25.*default/i },
+  { name: "explicit profitability metric overrides default", query: "Profitable tech companies with operating margin above 12%", expected: [{ field: "operatingMargin", op: ">", value: 12 }, { field: "sector", op: "==", value: "Technology" }], forbidden: [{ field: "operatingMargin", op: ">", value: 0 }] },
+  { name: "explicit debt metric overrides low-debt default", query: "Low debt companies with debt/equity below 0.5", expected: [{ field: "debtEquity", op: "<", value: 0.5 }], forbidden: [{ field: "debtEquity", op: "<", value: 1 }] },
+  { name: "explicit valuation metric overrides reasonable-valuation default", query: "Reasonably valued tech stocks with forward P/E below 20", expected: [{ field: "forwardPe", op: "<", value: 20 }, { field: "sector", op: "==", value: "Technology" }], forbidden: [{ field: "pe", op: "<", value: 25 }] },
   { name: "sector OR", query: "Technology and Healthcare stocks with P/E below 30", expected: [{ field: "sector", op: "in", value: "Technology|Healthcare" }, { field: "pe", op: "<", value: 30 }] },
   { name: "multiple sector exclusions", query: "Exclude Technology and Energy; P/E below 18", expected: [{ field: "sector", op: "!=", value: "Technology" }, { field: "sector", op: "!=", value: "Energy" }, { field: "pe", op: "<", value: 18 }] },
   { name: "earnings yield is distinct", query: "Financials with earnings yield above 6% and P/B below 2", expected: [{ field: "earningsYield", op: ">", value: 6 }, { field: "pb", op: "<", value: 2 }, { field: "sector", op: "==", value: "Financials" }], absentFields: ["divYield"] },
@@ -63,13 +68,15 @@ async function run() {
     const result = await parseQuery(c.query, [], [], "marketCap", "new");
     const actual = new Set(result.filters.map(key));
     const missing = (c.expected ?? []).filter((f) => !actual.has(key(f)));
+    const forbiddenPresent = (c.forbidden ?? []).filter((f) => actual.has(key(f)));
     const absentViolation = (c.absentFields ?? []).filter((field) => result.filters.some((f) => f.field === field));
     const assumptionOk = !c.assumption || c.assumption.test(result.assumptions.join(" "));
-    if (missing.length || absentViolation.length || !assumptionOk) {
+    if (missing.length || forbiddenPresent.length || absentViolation.length || !assumptionOk) {
       failures++;
       console.log(`FAIL ${c.name}`);
       if (missing.length) console.log(`  missing: ${missing.map(key).join(", ")}`);
-      if (absentViolation.length) console.log(`  unexpectedly present: ${absentViolation.join(", ")}`);
+      if (forbiddenPresent.length) console.log(`  forbidden filters present: ${forbiddenPresent.map(key).join(", ")}`);
+      if (absentViolation.length) console.log(`  unexpectedly present fields: ${absentViolation.join(", ")}`);
       if (!assumptionOk) console.log(`  missing assumption: ${c.assumption}`);
       console.log(`  actual: ${result.filters.map(key).join(", ") || "(none)"}`);
       console.log(`  assumptions: ${result.assumptions.join(" | ") || "(none)"}`);
