@@ -146,9 +146,9 @@ export default function TryPage() {
 
   const activeMetricCols = useMemo(() => Array.from(new Set(filters.flatMap((f) => {
     const meta = FIELDS[f.field];
-    if (!meta || meta.kind !== "num" || ["price", "market_cap", "pe", "chg_1w"].includes(meta.col)) return [];
+    if (!meta || meta.kind !== "num" || ["price", "market_cap", "from_52w_high", "pe", "chg_1w"].includes(meta.col)) return [];
     return [meta.col as keyof StockRow];
-  }))).slice(0, 4), [filters]);
+  }))), [filters]);
 
   const displayedResults = useMemo(() => {
     if (!sort) return results;
@@ -217,10 +217,11 @@ export default function TryPage() {
           <th aria-sort={ariaSort("name")} onClick={() => toggleSort("name")} style={headerStyle("left")}>Company{sortArrow("name")}</th>
           <th aria-sort={ariaSort("price")} onClick={() => toggleSort("price")} style={headerStyle("right")}>Price{sortArrow("price")}</th>
           <th aria-sort={ariaSort("market_cap")} onClick={() => toggleSort("market_cap")} style={headerStyle("right")}>Market cap{sortArrow("market_cap")}</th>
+          <th aria-sort={ariaSort("from_52w_high")} onClick={() => toggleSort("from_52w_high")} style={headerStyle("right")}>% off 52W high{sortArrow("from_52w_high")}</th>
           <th aria-sort={ariaSort("pe")} onClick={() => toggleSort("pe")} style={headerStyle("right")}>P/E{sortArrow("pe")}</th>
           {activeMetricCols.map((col) => <th key={String(col)} aria-sort={ariaSort(col)} onClick={() => toggleSort(col)} style={headerStyle("right")}>{fieldMetaForColumn(col)?.label || String(col)}{sortArrow(col)}</th>)}
           <th aria-sort={ariaSort("chg_1w")} onClick={() => toggleSort("chg_1w")} style={headerStyle("right")}>1W change{sortArrow("chg_1w")}</th>
-        </tr></thead><tbody>{displayedResults.map((r) => <tr key={r.symbol}><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, fontFamily: MONO, fontSize: 13 }}>{r.symbol}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, fontSize: 13 }}>{r.name}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.price == null ? "—" : `$${Number(r.price).toFixed(2)}`}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.market_cap == null ? "—" : `$${Number(r.market_cap).toFixed(1)}B`}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.pe == null ? "—" : Number(r.pe).toFixed(1)}</td>{activeMetricCols.map((col) => <td key={String(col)} style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{formatMetricCell(col, r[col])}</td>)}<td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13, color: (r.chg_1w ?? 0) >= 0 ? T.gain : T.loss }}>{r.chg_1w == null ? "—" : `${Number(r.chg_1w).toFixed(1)}%`}</td></tr>)}</tbody></table></div>}
+        </tr></thead><tbody>{displayedResults.map((r) => <tr key={r.symbol}><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, fontFamily: MONO, fontSize: 13 }}>{r.symbol}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, fontSize: 13 }}>{r.name}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.price == null ? "—" : `$${Number(r.price).toFixed(2)}`}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.market_cap == null ? "—" : `$${Number(r.market_cap).toFixed(1)}B`}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.from_52w_high == null ? "—" : `${Number(r.from_52w_high).toFixed(1)}%`}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.pe == null ? "—" : Number(r.pe).toFixed(1)}</td>{activeMetricCols.map((col) => <td key={String(col)} style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{formatMetricCell(col, r[col])}</td>)}<td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13, color: (r.chg_1w ?? 0) >= 0 ? T.gain : T.loss }}>{r.chg_1w == null ? "—" : `${Number(r.chg_1w).toFixed(1)}%`}</td></tr>)}</tbody></table></div>}
         <div style={{ marginTop: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}><span style={{ color: T.inkSoft, fontSize: 13.5 }}>Research tool only; these are screen matches, not investment recommendations.</span><a href="/account?mode=signup" className="p-link">Create account to save →</a></div>
       </section>}
 
