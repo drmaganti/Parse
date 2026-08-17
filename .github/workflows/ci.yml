@@ -19,5 +19,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run test:investor-language
       - run: npm run test:p0-parser
+      - run: npm run eval:composite100
+      - run: npm run eval:retail100
       - run: npm run build
