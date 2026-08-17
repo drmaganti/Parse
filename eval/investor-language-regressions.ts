@@ -11,7 +11,7 @@ type Case = {
 };
 
 function valueKey(value: FilterValue): string {
-  if (Array.isArray(value)) return [...value].map((v) => String(v).toLowerCase()).sort().join("|");
+  if (typeof value === "string" && value.includes("|")) return value.split("|").map((v) => v.trim().toLowerCase()).sort().join("|");
   return String(value).toLowerCase();
 }
 
@@ -35,7 +35,7 @@ const cases: Case[] = [
   { name: "dividend grower no invented yield", query: "Dividend growers with payout ratio below 60%", absentFields: ["divYield"], assumption: /dividend growth|payout ratio/i },
   { name: "dividend stock no invented yield", query: "Dividend stocks with payout ratio below 50% and P/E below 20", expected: [{ field: "pe", op: "<", value: 20 }], absentFields: ["divYield"], assumption: /payout ratio/i },
   { name: "low beta remains ambiguous", query: "Income stocks with low beta", absentFields: ["beta", "divYield"], assumption: /low beta/i },
-  { name: "sector OR", query: "Technology and Healthcare stocks with P/E below 30", expected: [{ field: "sector", op: "in", value: ["Technology", "Healthcare"] }, { field: "pe", op: "<", value: 30 }] },
+  { name: "sector OR", query: "Technology and Healthcare stocks with P/E below 30", expected: [{ field: "sector", op: "in", value: "Technology|Healthcare" }, { field: "pe", op: "<", value: 30 }] },
   { name: "multiple sector exclusions", query: "Exclude Technology and Energy; P/E below 18", expected: [{ field: "sector", op: "!=", value: "Technology" }, { field: "sector", op: "!=", value: "Energy" }, { field: "pe", op: "<", value: 18 }] },
   { name: "earnings yield protected", query: "Financials with earnings yield above 6% and P/B below 2", expected: [{ field: "pb", op: "<", value: 2 }, { field: "sector", op: "==", value: "Financials" }], absentFields: ["divYield"], assumption: /earnings yield/i },
   { name: "forward PE protected", query: "Tech stocks with forward P/E below 25 and revenue growth above 15%", expected: [{ field: "revGrowth", op: ">", value: 15 }, { field: "sector", op: "==", value: "Technology" }], absentFields: ["pe"], assumption: /forward p\/e/i },
