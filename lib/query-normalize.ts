@@ -116,6 +116,10 @@ export function normalizeScreenQuery(input: string): NormalizedQuery {
     (_m, cmp: string, amount: string) => `dividend yield ${cmp} ${amount}%`
   );
 
+  // Keep style labels visible to intent coverage, but prevent the deterministic
+  // parser's legacy generic-growth shortcut from manufacturing a 15% threshold.
+  query = query.replace(/\bgrowth\s+(stocks|companies|names)\b/gi, "growth-style $1");
+
   query = query.replace(/\bgrowing\s+both\s+revenue\s+and\s+(?:eps|earnings)\s+double[- ]digits?\b/gi, "revenue growth at least 10% and EPS growth double digits");
   query = query.replace(/\bdouble[- ]digit\s+revenue\s+growth\b/gi, "revenue growth at least 10%");
 
