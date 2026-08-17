@@ -12,17 +12,27 @@ create table if not exists public.stocks (
   price          numeric,
   market_cap     numeric,          -- USD billions
   pe             numeric,
+  forward_pe     numeric,
   pb             numeric,
   ps             numeric,
+  peg            numeric,
+  forward_peg    numeric,
+  earnings_yield numeric,          -- percent; derived as 100 / positive trailing P/E
   div_yield      numeric,          -- percent
+  div_growth_5y  numeric,          -- percent 5-year dividend growth
+  payout_ratio   numeric,          -- percent TTM
   beta           numeric,
   rev_growth     numeric,          -- percent YoY
   roic           numeric,          -- percent; latest fiscal-year value
+  roe            numeric,          -- percent TTM
+  gross_margin   numeric,          -- percent TTM
   operating_margin numeric,        -- percent TTM
   fcf_margin     numeric,          -- percent; latest fiscal-year value
   fcf_yield      numeric,          -- percent; derived from Finnhub EV/FCF and market cap
   debt_equity    numeric,          -- total debt / total equity
   interest_coverage numeric,       -- TTM multiple
+  current_ratio  numeric,
+  quick_ratio    numeric,
   rev_growth_3y  numeric,          -- percent 3-year CAGR
   eps_growth_3y  numeric,          -- percent 3-year CAGR
   ev_ebitda      numeric,          -- TTM multiple
@@ -50,6 +60,16 @@ alter table public.stocks add column if not exists interest_coverage numeric;
 alter table public.stocks add column if not exists rev_growth_3y numeric;
 alter table public.stocks add column if not exists eps_growth_3y numeric;
 alter table public.stocks add column if not exists ev_ebitda numeric;
+alter table public.stocks add column if not exists forward_pe numeric;
+alter table public.stocks add column if not exists peg numeric;
+alter table public.stocks add column if not exists forward_peg numeric;
+alter table public.stocks add column if not exists earnings_yield numeric;
+alter table public.stocks add column if not exists div_growth_5y numeric;
+alter table public.stocks add column if not exists payout_ratio numeric;
+alter table public.stocks add column if not exists roe numeric;
+alter table public.stocks add column if not exists gross_margin numeric;
+alter table public.stocks add column if not exists current_ratio numeric;
+alter table public.stocks add column if not exists quick_ratio numeric;
 
 alter table public.stocks enable row level security;
 
