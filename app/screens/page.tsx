@@ -1,14 +1,29 @@
 import type { Metadata } from "next";
 import { PUBLIC_SCREENS } from "../../lib/publicScreens";
 import { supabasePublic } from "../../lib/supabase-server";
+import ScreenMarketplace from "./ScreenMarketplace";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Stock Screen Ideas", description: "Browse ready-made and public community stock screens, then run or edit them in Parse.", alternates: { canonical: "/screens" } };
-const T = { bg: "#F4F5F7", surface: "#FFFFFF", border: "#E6E8EC", ink: "#15171C", inkSoft: "#565C67", accent: "#2C36A8" };
-const DISP = "var(--font-display), 'Instrument Sans', system-ui, sans-serif";
+export const metadata: Metadata = {
+  title: "Stock Screener Marketplace",
+  description: "Discover popular stock screens by strategy, metric, or investor style, then run and customize them in Parse.",
+  alternates: { canonical: "/screens" },
+};
+
 export default async function ScreensPage() {
-  const categories = ["value", "growth", "income", "quality", "momentum", "pullback"] as const;
-  const { data } = await supabasePublic.from("shared_screens").select("slug,title,query,created_at").eq("visibility", "public").order("created_at", { ascending: false }).limit(18);
-  const community = data ?? [];
-  return <div style={{ minHeight: "100vh", background: T.bg, color: T.ink, fontFamily: "var(--font-body), 'Inter', system-ui, sans-serif" }}><header style={{ borderBottom: `1px solid ${T.border}` }}><div style={{ maxWidth: 1000, margin: "0 auto", padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><a href="/" style={{ color: T.ink, textDecoration: "none", fontFamily: DISP, fontWeight: 600, fontSize: 18 }}>Parse</a><div style={{ display: "flex", gap: 16 }}><a href="/investors" style={{ color: T.accent, textDecoration: "none" }}>Investor portfolios</a><a href="/try" style={{ color: T.accent, textDecoration: "none" }}>Try Parse</a></div></div></header><main style={{ maxWidth: 1000, margin: "0 auto", padding: "50px 24px 82px" }}><h1 style={{ fontFamily: DISP, fontSize: 40, margin: "0 0 12px" }}>Start with a screen worth asking.</h1><p style={{ color: T.inkSoft, maxWidth: 720, lineHeight: 1.58, fontSize: 16 }}>Open a starting point, inspect the criteria, then run or change it in Parse.</p>{community.length > 0 && <section style={{ marginTop: 38 }}><h2 style={{ fontFamily: DISP, fontSize: 22 }}>Published by Parse users</h2><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(250px,1fr))", gap: 12 }}>{community.map((s: any) => <a key={s.slug} href={`/s/${s.slug}`} style={{ display: "block", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 13, padding: 17, color: T.ink, textDecoration: "none" }}><div style={{ fontFamily: DISP, fontWeight: 650 }}>{s.title}</div>{s.query && <div style={{ color: T.inkSoft, fontSize: 13.5, lineHeight: 1.45, marginTop: 7 }}>{s.query}</div>}<div style={{ color: T.accent, fontSize: 13.5, marginTop: 11 }}>View exact screen →</div></a>)}</div></section>}{categories.map((category) => { const screens = PUBLIC_SCREENS.filter((s) => s.category === category); return <section key={category} style={{ marginTop: 38 }}><h2 style={{ fontFamily: DISP, fontSize: 21, textTransform: "capitalize" }}>{category}</h2><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(250px,1fr))", gap: 12 }}>{screens.map((s) => <a key={s.slug} href={`/screens/${s.slug}`} style={{ display: "block", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 13, padding: 17, color: T.ink, textDecoration: "none" }}><div style={{ fontFamily: DISP, fontWeight: 650 }}>{s.title}</div><div style={{ color: T.inkSoft, fontSize: 13.5, lineHeight: 1.45, marginTop: 7 }}>{s.summary}</div><div style={{ color: T.accent, fontSize: 13.5, marginTop: 11 }}>View screen →</div></a>)}</div></section>; })}</main></div>;
+  const { data } = await supabasePublic
+    .from("shared_screens")
+    .select("slug,title,query,created_at")
+    .eq("visibility", "public")
+    .order("created_at", { ascending: false })
+    .limit(18);
+
+  const community = (data ?? []).map((screen: any) => ({
+    slug: screen.slug,
+    title: screen.title,
+    query: screen.query || "",
+    createdAt: screen.created_at,
+  }));
+
+  return <ScreenMarketplace screens={PUBLIC_SCREENS} community={community} />;
 }
