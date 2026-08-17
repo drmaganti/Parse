@@ -42,7 +42,7 @@ async function intentCoverageCase(
   check(`${query} has no unexpected filters`, result.filters.length === expected.length, JSON.stringify(result.filters));
   const assumptions = result.assumptions.join(" ").toLowerCase();
   for (const needle of assumptionNeedles) {
-    check(`${query} surfaces unmapped '${needle}' intent`, assumptions.includes(needle.toLowerCase()), JSON.stringify(result.assumptions));
+    check(`${query} surfaces disclosed '${needle}' interpretation`, assumptions.includes(needle.toLowerCase()), JSON.stringify(result.assumptions));
   }
 }
 
@@ -91,7 +91,10 @@ async function run() {
   await intentCoverageCase(
     "profitable tech companies growing revenue over 20% with low debt and a reasonable valuation",
     [
+      { field: "operatingMargin", op: ">", value: 0 },
       { field: "revGrowth", op: ">", value: 20 },
+      { field: "debtEquity", op: "<", value: 1 },
+      { field: "pe", op: "<", value: 25 },
       { field: "sector", op: "==", value: "Technology" },
     ],
     ["profitable", "low debt", "reasonable valuation"]
