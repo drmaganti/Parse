@@ -1,8 +1,8 @@
-import { FIELDS, RANKINGS, type Filter, type Op } from "./fields";
+import { FIELDS, RANKINGS, type Filter, type FilterValue, type Op } from "./fields";
 
 export type RefinementAction =
-  | { type: "add" | "replace"; field: string; op: Op; value: number | string }
-  | { type: "remove"; field: string; op?: Op; value?: number | string };
+  | { type: "add" | "replace"; field: string; op: Op; value: FilterValue }
+  | { type: "remove"; field: string; op?: Op; value?: FilterValue };
 
 let actionCounter = 0;
 
@@ -10,11 +10,16 @@ function nextId(field: string, op: Op, source: Filter["source"]) {
   return `${field}_${op}_${source}_${Date.now()}_${actionCounter++}`;
 }
 
-export function sameFilter(a: Pick<Filter, "field" | "op" | "value">, b: Pick<Filter, "field" | "op" | "value">) {
-  return a.field === b.field && a.op === b.op && String(a.value).toLowerCase() === String(b.value).toLowerCase();
+function valueKey(value: FilterValue): string {
+  if (Array.isArray(value)) return [...value].map((v) => String(v).toLowerCase()).sort().join("|");
+  return String(value).toLowerCase();
 }
 
-export function makeFilter(field: string, op: Op, value: number | string, source: Filter["source"] = "ai"): Filter {
+export function sameFilter(a: Pick<Filter, "field" | "op" | "value">, b: Pick<Filter, "field" | "op" | "value">) {
+  return a.field === b.field && a.op === b.op && valueKey(a.value) === valueKey(b.value);
+}
+
+export function makeFilter(field: string, op: Op, value: FilterValue, source: Filter["source"] = "ai"): Filter {
   return { id: nextId(field, op, source), field, op, value, source };
 }
 
@@ -30,7 +35,7 @@ export function applyRefinement(previous: Filter[], actions: RefinementAction[],
         if (f.field !== action.field) return true;
         if (!action.op && action.value === undefined) return false;
         if (action.op && f.op !== action.op) return true;
-        if (action.value !== undefined && String(f.value).toLowerCase() !== String(action.value).toLowerCase()) return true;
+        if (action.value !== undefined && valueKey(f.value) !== valueKey(action.value)) return true;
         return false;
       });
       continue;
@@ -64,16 +69,32 @@ export function validRanking(key: unknown): string | undefined {
   return typeof key === "string" && RANKINGS[key] ? key : undefined;
 }
 
+function intersectAllowed(current: Set<string> | null, next: Set<string>): Set<string> {
+  if (current == null) return new Set(next);
+  return new Set([...current].filter((value) => next.has(value)));
+}
+
 export function findFilterConflict(filters: Filter[]): string | null {
   for (const [field, meta] of Object.entries(FIELDS)) {
     const group = filters.filter((f) => f.field === field);
     if (group.length < 2) continue;
 
     if (meta.kind === "cat") {
-      const equals = group.filter((f) => f.op === "==").map((f) => String(f.value).toLowerCase());
-      const notEquals = new Set(group.filter((f) => f.op === "!=").map((f) => String(f.value).toLowerCase()));
-      if (new Set(equals).size > 1) return `${meta.label} cannot equal more than one value at the same time.`;
-      if (equals.some((v) => notEquals.has(v))) return `${meta.label} is both included and excluded.`;
+      let allowed: Set<string> | null = null;
+      const excluded = new Set<string>();
+
+      for (const f of group) {
+        if (f.op === "==") {
+          allowed = intersectAllowed(allowed, new Set([String(f.value).toLowerCase()]));
+        } else if (f.op === "in" && Array.isArray(f.value)) {
+          allowed = intersectAllowed(allowed, new Set(f.value.map((v) => String(v).toLowerCase())));
+        } else if (f.op === "!=") {
+          excluded.add(String(f.value).toLowerCase());
+        }
+      }
+
+      if (allowed && allowed.size === 0) return `${meta.label} inclusion filters do not overlap.`;
+      if (allowed && [...allowed].every((value) => excluded.has(value))) return `${meta.label} is both included and excluded.`;
       continue;
     }
 
