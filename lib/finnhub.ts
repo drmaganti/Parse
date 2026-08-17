@@ -31,6 +31,7 @@ export interface Metrics {
   forwardPe?: number;
   pb?: number;
   ps?: number;
+  peg?: number;
   forwardPeg?: number;
   earningsYield?: number;
   divYield?: number;
@@ -79,7 +80,8 @@ export async function fetchMetrics(symbol: string, key: string): Promise<Metrics
     forwardPe: num(m.forwardPE),
     pb: num(m.pbQuarterly ?? m.pbAnnual),
     ps: num(m.psTTM),
-    forwardPeg: num(m.forwardPEG ?? m.pegTTM),
+    peg: num(m.pegTTM),
+    forwardPeg: num(m.forwardPEG),
     earningsYield,
     divYield: num(m.dividendYieldIndicatedAnnual ?? m.currentDividendYieldTTM),
     divGrowth5Y: num(m.dividendGrowthRate5Y),
