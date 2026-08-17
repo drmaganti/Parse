@@ -21,21 +21,21 @@ export function coerceFilter(raw: any, source: Filter["source"] = "ai"): Filter 
   if (meta.kind === "cat" && op !== "==" && op !== "!=" && op !== "in") return null;
   if (meta.kind === "num" && (op === "!=" || op === "in")) return null;
 
-  let value: FilterValue = raw?.value;
+  let value: FilterValue;
   if (meta.kind === "num") {
-    const n = Number(value);
+    const n = Number(raw?.value);
     if (!Number.isFinite(n)) return null;
     value = n;
   } else if (op === "in") {
-    if (!Array.isArray(value) || value.length < 2) return null;
-    const canonical = value
-      .map((item) => SECTORS.find((s) => s.toLowerCase() === String(item).trim().toLowerCase()))
-      .filter((item): item is string => Boolean(item));
+    if (!Array.isArray(raw?.value) || raw.value.length < 2) return null;
+    const canonical = raw.value
+      .map((item: unknown) => SECTORS.find((s) => s.toLowerCase() === String(item).trim().toLowerCase()))
+      .filter((item: string | undefined): item is string => Boolean(item));
     const unique = [...new Set(canonical)];
     if (unique.length < 2) return null;
-    value = unique;
+    value = unique.join("|");
   } else {
-    const hit = SECTORS.find((s) => s.toLowerCase() === String(value).trim().toLowerCase());
+    const hit = SECTORS.find((s) => s.toLowerCase() === String(raw?.value).trim().toLowerCase());
     if (!hit) return null;
     value = hit;
   }
@@ -65,7 +65,7 @@ export function coerceActions(rawActions: unknown): RefinementAction[] {
       if ((raw.op === "!=" || raw.op === "in") && FIELDS[raw.field].kind === "num") continue;
       const action: RefinementAction = { type: "remove", field: raw.field };
       if (raw.op !== undefined) action.op = raw.op as Op;
-      if (raw.value !== undefined) action.value = raw.value;
+      if (raw.value !== undefined) action.value = Array.isArray(raw.value) ? raw.value.join("|") : raw.value;
       if (!out.some((a) => JSON.stringify(a) === JSON.stringify(action))) out.push(action);
       continue;
     }
@@ -86,9 +86,7 @@ export function enforceRefinementIntent(query: string, actions: RefinementAction
 
   return actions.flatMap((action) => {
     if (action.type === "remove" && !removeAllowed) return [];
-    if (action.type === "replace" && !replaceAllowed) {
-      return [{ ...action, type: "add" as const }];
-    }
+    if (action.type === "replace" && !replaceAllowed) return [{ ...action, type: "add" as const }];
     return [action];
   });
 }
