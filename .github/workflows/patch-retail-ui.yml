@@ -1,0 +1,59 @@
+name: patch-retail-ui
+
+on:
+  push:
+    branches: [agent/retail-investor-p0-p2]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/retail-investor-p0-p2
+      - name: Patch UI/state compatibility
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          page = Path('app/page.tsx')
+          s = page.read_text()
+          replacements = [
+            ('["<", "<=", ">", ">=", "==", "!="].includes(p.op)', '["<", "<=", ">", ">=", "==", "!=", "in"].includes(p.op)'),
+            ('const display = meta.kind === "cat" ? `${meta.label} ${f.op === "!=" ? "is not" : "is"} ${f.value}` : `${meta.label} ${f.op} ${f.value}${meta.unit === "%" ? "%" : ""}`;',
+             'const display = meta.kind === "cat" ? `${meta.label} ${f.op === "in" ? "is one of" : f.op === "!=" ? "is not" : "is"} ${f.op === "in" ? String(f.value).split("|").join(" or ") : f.value}` : `${meta.label} ${f.op} ${f.value}${meta.unit === "%" ? "%" : ""}`;'),
+            ('function formatFilter(f: Pick<Filter, "field" | "op" | "value">) { const m = FIELDS[f.field]; if (!m) return `${f.field} ${f.op} ${f.value}`; if (m.kind === "cat") return `${m.label} ${f.op === "!=" ? "is not" : "is"} ${f.value}`; const suffix = m.unit === "%" || m.unit === "×" ? m.unit : m.unit === "$B" ? "B" : ""; return `${m.label} ${f.op} ${f.value}${suffix}`; }',
+             'function formatFilter(f: Pick<Filter, "field" | "op" | "value">) { const m = FIELDS[f.field]; if (!m) return `${f.field} ${f.op} ${f.value}`; if (m.kind === "cat") return `${m.label} ${f.op === "in" ? "is one of" : f.op === "!=" ? "is not" : "is"} ${f.op === "in" ? String(f.value).split("|").join(" or ") : f.value}`; const suffix = m.unit === "%" || m.unit === "×" ? m.unit : m.unit === "$B" ? "B" : ""; return `${m.label} ${f.op} ${f.value}${suffix}`; }'),
+          ]
+          for old, new in replacements:
+            if old not in s:
+              raise SystemExit(f'app/page.tsx patch target missing: {old[:80]}')
+            s = s.replace(old, new, 1)
+          marker = 'const ALL_COLS: Record<string, Col> = {\n'
+          additions = '''  forward_pe: { key: "forward_pe", label: "Forward P/E", fmt: (v) => fmtNum(v) }, peg: { key: "peg", label: "PEG", fmt: (v) => fmtNum(v, 2) }, forward_peg: { key: "forward_peg", label: "Forward PEG", fmt: (v) => fmtNum(v, 2) }, earnings_yield: { key: "earnings_yield", label: "Earnings yield", fmt: pct },\n  div_growth_5y: { key: "div_growth_5y", label: "Div gr. 5Y", fmt: pct }, payout_ratio: { key: "payout_ratio", label: "Payout", fmt: pct }, roe: { key: "roe", label: "ROE TTM", fmt: pct }, gross_margin: { key: "gross_margin", label: "Gross margin", fmt: pct }, current_ratio: { key: "current_ratio", label: "Current ratio", fmt: (v) => fmtNum(v, 2) }, quick_ratio: { key: "quick_ratio", label: "Quick ratio", fmt: (v) => fmtNum(v, 2) },\n'''
+          if marker not in s:
+            raise SystemExit('ALL_COLS marker missing')
+          s = s.replace(marker, marker + additions, 1)
+          page.write_text(s)
+
+          trial = Path('app/try/page.tsx')
+          t = trial.read_text()
+          old = '  const sector = meta?.kind === "cat";\n  return <div style={{ display: "inline-flex", alignItems: "center", gap: 6, border: `1px solid ${f.source === "user" ? "#C9CEF3" : T.border}`, background: f.source === "user" ? T.accentSoft : T.surfaceAlt, borderRadius: 9, padding: "6px 8px" }}>\n    <span style={{ fontFamily: MONO, fontSize: 12.5 }}>{meta?.label || f.field} {f.op}</span>\n    {sector ? <span style={{ fontFamily: MONO, fontSize: 12.5 }}>{String(f.value)}</span>'
+          new = '  const sector = meta?.kind === "cat";\n  const displayOp = sector ? (f.op === "in" ? "is one of" : f.op === "!=" ? "is not" : "is") : f.op;\n  const displayValue = sector && f.op === "in" ? String(f.value).split("|").join(" or ") : String(f.value);\n  return <div style={{ display: "inline-flex", alignItems: "center", gap: 6, border: `1px solid ${f.source === "user" ? "#C9CEF3" : T.border}`, background: f.source === "user" ? T.accentSoft : T.surfaceAlt, borderRadius: 9, padding: "6px 8px" }}>\n    <span style={{ fontFamily: MONO, fontSize: 12.5 }}>{meta?.label || f.field} {displayOp}</span>\n    {sector ? <span style={{ fontFamily: MONO, fontSize: 12.5 }}>{displayValue}</span>'
+          if old not in t:
+            raise SystemExit('app/try/page.tsx chip target missing')
+          t = t.replace(old, new, 1)
+          trial.write_text(t)
+          PY
+      - name: Commit UI compatibility changes
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add app/page.tsx app/try/page.tsx
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Complete retail investor UI compatibility"
+          git push origin HEAD:agent/retail-investor-p0-p2
