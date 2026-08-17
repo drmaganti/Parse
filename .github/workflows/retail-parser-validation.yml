@@ -1,0 +1,26 @@
+name: retail-parser-validation
+
+on:
+  push:
+    branches: [agent/retail-investor-p0-p2]
+  workflow_dispatch: {}
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - name: Probe available fundamental metrics
+        run: npx tsx eval/inspect-finnhub-metrics.ts
+        env:
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+      - name: Run retail and parser suites
+        run: npm run test:retail-full
+      - name: Production build
+        run: npx next build
