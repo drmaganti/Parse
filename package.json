@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "tsx eval/inspect-finnhub-metrics.ts && npm run test:investor-language && npm run test:p0-parser && npm run eval:composite100 && npm run eval:retail100 && npm run eval:holdout100 && next build",
+    "build": "tsx eval/inspect-finnhub-metrics.ts && npm run test:retail-full && next build",
     "start": "next start",
     "ingest": "tsx scripts/ingest.ts",
     "ingest:investors": "tsx scripts/ingest-investor-holdings.ts",
@@ -18,7 +18,8 @@
     "eval:model": "MODEL_RUNS=2 MODEL_MIN_PASS_RATE=0.95 tsx eval/run.ts",
     "eval:live": "MODEL_MIN_PASS_RATE=0.95 tsx eval/live.ts",
     "eval:offline": "OFFLINE=1 tsx eval/run.ts",
-    "test:p0-parser": "npm run test:parser-contract && npm run test:composite-regressions && npm run eval:offline"
+    "test:p0-parser": "npm run test:parser-contract && npm run test:composite-regressions && npm run eval:offline",
+    "test:retail-full": "npm run test:investor-language && npm run test:p0-parser && npm run eval:composite100 && npm run eval:retail100 && npm run eval:holdout100"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
