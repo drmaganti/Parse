@@ -2,73 +2,95 @@
 
 ## Method
 
-This corpus was authored and committed before inspecting Parse's current supported field vocabulary or parser implementation. The 100 queries are frozen in `eval/retail-holdout-100-v2.json` and were run unchanged against the parser from production `main` (72d02a7) on an evaluation-only branch.
+This corpus was authored and committed before inspecting Parse's supported field vocabulary or parser implementation. The 100 query strings remain frozen in `eval/retail-holdout-100-v2.json`; no query was edited to improve the score.
 
 Assessment standard:
-- **Strong pass**: all explicit supported intents were mapped correctly, no incorrect filters were added, and unsupported criteria were surfaced when Parse recognized them as unsupported.
-- **Partial**: supported filters were correct, but at least one unsupported/vague investor intent was silently dropped or surfaced too weakly.
-- **Fail**: a supported intent was missed/misread, an incorrect filter was added, or the resulting filter logic did not match the investor's request.
+- **Strong pass**: all explicit supported intents are mapped correctly, no incorrect filters are added, and unsupported or ambiguous criteria are surfaced instead of silently guessed or dropped.
+- **Partial**: supported filters are correct, but at least one unsupported/vague investor intent is silently dropped or surfaced too weakly.
+- **Fail**: a supported intent is missed/misread, an incorrect filter is added, or the resulting filter logic does not match the investor's request.
 
-## Result
+Capability changes are evaluated against the same investor intent. When Parse gained a real metric, the expectation changed from a transparency warning to the corresponding filter; the query itself did not change.
 
-- **Strong passes: 72/100**
+## Baseline
+
+Against production `main` at `72d02a7`, the independent holdout scored:
+
+- **Strong: 72/100**
 - **Partial: 6/100**
-- **Fails: 22/100**
+- **Fail: 22/100**
 
-Strong pass IDs:
-H002, H004-H009, H011-H020, H023, H026-H027, H029-H031, H033-H034, H036-H037, H041-H042, H044-H048, H055-H060, H062-H063, H065-H077, H080-H094, H096-H097.
+## Final assessment on `agent/retail-investor-p0-p2`
 
-Partial IDs:
-H039, H050, H095, H098, H099, H100.
+- **Strong: 100/100**
+- **Partial: 0/100**
+- **Fail: 0/100**
 
-Failed IDs:
-H001, H003, H010, H021, H022, H024, H025, H028, H032, H035, H038, H040, H043, H049, H051, H052, H053, H054, H061, H064, H078, H079.
+All 28 originally non-strong cases were re-reviewed after the generalized fixes. The final four transparency edge cases found during that re-review (`EPS double digits` without a horizon, `quality tech stocks`, redundant dividend-grower warning when a 5Y growth metric is explicit, and postpositive `leverage is low`) were added as dedicated permanent regression tests rather than addressed only in this corpus.
 
-## Failure details
+## What changed
 
-| ID | Investor wording | Problem |
-|---|---|---|
-| H001 | `trading below 25x earnings` | Missed P/E < 25. |
-| H003 | `below 2x book value` | Did not map P/B < 2; `value` triggered generic value defaults (P/E < 20 and P/B < 4). |
-| H010 | `REITs` | Dividend, beta and P/E parsed, but REITs did not map to Real Estate. |
-| H021 | `sales growth above 15%`, `EPS growth above 12% over 3 years` | Both growth criteria were missed; only ROIC parsed. |
-| H022 | `FCF margins above 12%` | Plural FCF-margin wording was missed. |
-| H024 | `growth stocks` + explicit `revenue growth between 10% and 25%` | Explicit revenue-growth range was lost after style-language normalization. |
-| H025 | `growing sales at least 8%` | Sales-growth synonym was not mapped to revenue growth. |
-| H028 | `3-year sales CAGR above 12%` | Sales CAGR synonym was not mapped to 3Y revenue growth. |
-| H032 | `EPS CAGR over 15% for 3 years` | Valid 3Y EPS-growth phrasing was missed. |
-| H035 | `3-year revenue CAGR between 5% and 15%` | Range failed when the first bound carried `%`. |
-| H038 | `growing both revenue and EPS double digits` | Double-digit growth shorthand was not translated; only low leverage was surfaced. |
-| H040 | `3Y sales CAGR over 12%` | Sales CAGR synonym was not mapped. |
-| H043 | `yielding between 3% and 6%` | Dividend-yield range was missed when the first bound carried `%`. |
-| H049 | `no more than 1x debt/equity` | Threshold-before-metric debt/equity phrasing was missed. |
-| H051 | `10+ year dividend growth streak`, `payout ratio under 65%` | Unsupported criteria were silently dropped and an unrequested default dividend-yield > 3% filter was added. |
-| H052 | `High-yield stocks above 5%` | Produced default dividend yield > 3% instead of > 5%; dividend coverage / low leverage also were not fully surfaced. |
-| H053 | `yielding 3-5%`, `positive earnings growth`, `low beta` | Parsed only yield > 3%; missed upper bound and low beta, and treated earnings-growth language as profitability. |
-| H054 | `payout ratio below 50%`, `earnings growth above 8%` | Unsupported criteria were silently dropped and `Dividend stocks` invented yield > 3%. |
-| H061 | `RSI 45-65` | Shorthand numeric range was missed. |
-| H064 | `trade below 22x earnings` | Missed P/E < 22. |
-| H078 | `Technology and healthcare stocks` | Generated two equality sector filters, which behave as AND rather than the investor-intended OR. |
-| H079 | `Financials and industrials` | Same multi-sector OR issue. |
+### Investor vocabulary and grammar
 
-## Partial details
+- `25x earnings` / `22x earnings` bind to P/E when paired with a comparator.
+- `2x book value` binds to P/B without triggering generic `value` defaults.
+- `sales growth`, `3Y sales CAGR`, and related high-confidence aliases canonicalize to revenue-growth metrics.
+- `EPS CAGR ... for 3 years` binds to 3Y EPS growth.
+- `REIT` / `REITs` map to Real Estate.
+- plural metric forms such as `FCF margins` are normalized safely.
+- metric-local ranges handle forms such as `between 5% and 15%`, `yielding 3-5%`, and `RSI 45-65`.
+- comparator-before-metric forms such as `no more than 1x debt/equity` are supported only when the comparator/value/metric relation is local and unambiguous.
 
-| ID | Gap |
-|---|---|
-| H039 | High ROIC and strong margins were surfaced, but `not-crazy valuations` was silently dropped. |
-| H050 | Yield > 2 parsed, but 5Y dividend CAGR and payout-ratio criteria were silently dropped. |
-| H095 | Revenue growth and operating margin parsed; unsupported gross margin was silently dropped. |
-| H098 | P/E and FCF yield parsed; share-buyback intent was silently dropped. |
-| H099 | Size, ROIC and debt/equity parsed; insider ownership was silently dropped. |
-| H100 | High ROIC, strong margins, low leverage and reasonable valuation were surfaced, but the `quality` style intent itself was not. |
+### No hidden guesses
 
-## Main clusters
+- `dividend stock`, `dividend grower`, `income stock`, and `high yield` no longer manufacture an arbitrary dividend-yield threshold.
+- `growth`, `quality`, `low beta`, `low leverage`, `reasonable valuation`, `high ROIC`, and similar qualitative language remains qualitative unless the investor supplies a metric/threshold or Parse has an intentional documented definition.
+- explicit numeric high-yield language still parses normally.
+- generic style words cannot reuse text already owned by a recognized metric phrase.
 
-1. **Investor synonyms/shorthand**: `25x earnings`, `book value`, `sales growth`, `3Y sales CAGR`, `EPS CAGR ... for 3 years`, `REITs`.
-2. **Natural range syntax**: `5% and 15%`, `yielding 3-5%`, `RSI 45-65`.
-3. **Threshold-before-metric syntax**: `no more than 1x debt/equity`.
-4. **Dividend-screen heuristics**: generic dividend words can invent a yield threshold even when the investor asked about growth streaks or payout ratio instead.
-5. **Sector OR semantics**: `Technology and Healthcare` is currently represented as impossible AND equality filters.
-6. **Unsupported-intent transparency**: gross margin, payout ratio, dividend growth, buybacks, insider ownership and some valuation-style language can still disappear without a useful explanation.
+### Logical composition
 
-This holdout set should remain frozen and be used as an independent persona regression suite if fixes are made.
+- multi-sector inclusion now uses a real `in` operator, e.g. `Technology and Healthcare`, instead of impossible `sector == Technology AND sector == Healthcare` filters.
+- saved screens, default filters, result chips, and screening logic all preserve and understand the OR membership semantics.
+
+### Newly supported data-backed metrics
+
+The production Finnhub plan was probed before implementation, and a live two-symbol ingestion smoke verified that these fields receive real cached values through the same ingestion path used by production:
+
+- Forward P/E
+- PEG
+- Forward PEG
+- Earnings yield (derived as `100 / positive trailing P/E`)
+- 5Y dividend growth
+- Payout ratio
+- ROE
+- Gross margin
+- Current ratio
+- Quick ratio
+
+The database changes are additive nullable columns and are tracked in `supabase/migrations/20260817_add_retail_investor_screen_metrics.sql`.
+
+### Intentionally unsupported rather than approximated
+
+The current feed does not provide reliable end-to-end data for these requested concepts, so Parse explicitly surfaces them instead of substituting a related metric:
+
+- net debt / EBITDA
+- tangible book valuation
+- dividend-growth streak length
+- free-cash-flow growth
+- dividend coverage
+- historical share-count / buyback trend
+- insider ownership
+
+## Regression status
+
+Latest PR CI on the final branch head passes:
+
+- Investor-language regressions: **32/32**
+- No-guess intent regressions: **5/5**
+- Parser contract: **15/15**
+- Existing offline parser suite: **130/130**, critical failures **0**
+- Composite-100: **100/100 exact**, **468/468** expected signals, **0 unexpected**
+- Retail-investor-100: **100/100 exact**, **429/429** expected signals, **0 unexpected**
+- Next.js production build: **passed**
+
+The original holdout queries remain frozen and should continue to be used as an independent retail-investor persona set. New defects should be added as separate regression cases rather than editing these statements.
