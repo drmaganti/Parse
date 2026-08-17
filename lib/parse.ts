@@ -31,11 +31,13 @@ function buildNewSystem(): string {
   return [
     "You convert a plain-English US stock screen into strict JSON.",
     `Only use these filter fields: ${vocab()}.`,
-    "Numeric operators: <, <=, >, >=, ==. Categorical sector operators: == and !=.",
+    "Numeric operators: <, <=, >, >=, ==. Categorical sector operators: ==, !=, and in.",
+    "For sector in, value must be an array of two or more valid sectors. Example: Technology and Healthcare => {field:'sector',op:'in',value:['Technology','Healthcare']}.",
     "Copy explicit numeric thresholds exactly. Do not make them stricter, looser, or round them.",
     "A range is represented as two filters on the same field. Example: P/E between 10 and 20 => pe>=10 and pe<=20.",
     "For exclusions such as 'exclude Energy', use sector != Energy.",
     "Do not add unrelated filters just because they are common in investing.",
+    "Do not invent numeric thresholds for qualitative words such as quality, low debt, high ROIC, dividend stock, or reasonable valuation unless a documented filter definition is explicitly supplied in the request.",
     "If the request asks for an unsupported metric, do not substitute another metric. Omit the unsupported criterion and record it in assumptions. If nothing supported remains, return an empty filters array.",
     `Ranking must be exactly one of: ${rankVocab()}.`,
     "Ranking-only requests may return an empty filters array.",
@@ -48,7 +50,8 @@ function buildRefineSystem(previous: Filter[], currentRanking: string): string {
   return [
     "You update an existing stock screen from one short user instruction. This is NOT a conversation and you must not regenerate unrelated criteria.",
     `Only use these filter fields: ${vocab()}.`,
-    "Numeric operators: <, <=, >, >=, ==. Categorical sector operators: == and !=.",
+    "Numeric operators: <, <=, >, >=, ==. Categorical sector operators: ==, !=, and in.",
+    "For sector in, value must be an array of two or more valid sectors.",
     "Copy explicit numeric thresholds exactly. Do not make them stricter, looser, or round them.",
     `Current filters: ${JSON.stringify(previous.map(({ field, op, value, source }) => ({ field, op, value, source })))}.`,
     `Current ranking: ${currentRanking}.`,
@@ -59,6 +62,7 @@ function buildRefineSystem(previous: Filter[], currentRanking: string): string {
     "Never change a numeric threshold merely because a new criterion was added.",
     "Ranges are two add actions on the same field unless the user explicitly replaces that field.",
     "Exclusions such as 'exclude Energy' use an add action with sector != Energy; exclusion is not a remove action.",
+    "Multiple included sectors use one sector in action, not multiple sector == actions.",
     "If the instruction asks for an unsupported metric, return no action for that criterion and record it in assumptions. Never substitute a supported metric.",
     `If ranking changes, ranking must be one of: ${rankVocab()}; otherwise return null.`,
     'Respond ONLY with minified JSON: {"actions":[{"type":"add","field":"revGrowth","op":">","value":10}],"ranking":null,"interpretation":"one short sentence","assumptions":[]}',
@@ -76,8 +80,6 @@ export async function parseQuery(
   const resolvedMode: ParseMode = isRefine ? "refine" : "new";
   const normalized = normalizeScreenQuery(query);
 
-  // The rules path must understand the whole supported intent, including
-  // explicit negations and a small set of transparent fuzzy translations.
   const rules = tryRuleParse(normalized.query, isRefine ? prev : [], currentRanking, resolvedMode);
   if (rules) {
     const assumptions = ensureIntentCoverage(
