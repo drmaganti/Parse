@@ -22,7 +22,7 @@ const supabase = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSessio
 interface Row {
   symbol: string; name: string; sector: string | null;
   price: number | null; market_cap: number | null;
-  pe: number | null; forward_pe: number | null; pb: number | null; ps: number | null; forward_peg: number | null; earnings_yield: number | null;
+  pe: number | null; forward_pe: number | null; pb: number | null; ps: number | null; peg: number | null; forward_peg: number | null; earnings_yield: number | null;
   div_yield: number | null; div_growth_5y: number | null; payout_ratio: number | null;
   beta: number | null; rev_growth: number | null;
   roic: number | null; roe: number | null; gross_margin: number | null; operating_margin: number | null; fcf_margin: number | null; fcf_yield: number | null;
@@ -65,7 +65,7 @@ async function build(symbol: string): Promise<Row | null> {
       price: quote.price ?? null,
       market_cap: metrics.marketCap != null ? round(metrics.marketCap / 1000, 1) : null,
       pe: round(metrics.pe), forward_pe: round(metrics.forwardPe), pb: round(metrics.pb), ps: round(metrics.ps),
-      forward_peg: round(metrics.forwardPeg, 2), earnings_yield: round(metrics.earningsYield),
+      peg: round(metrics.peg, 2), forward_peg: round(metrics.forwardPeg, 2), earnings_yield: round(metrics.earningsYield),
       div_yield: round(metrics.divYield), div_growth_5y: round(metrics.divGrowth5Y), payout_ratio: round(metrics.payoutRatio),
       beta: round(metrics.beta, 2), rev_growth: round(metrics.revGrowth),
       roic: round(metrics.roic), roe: round(metrics.roe), gross_margin: round(metrics.grossMargin), operating_margin: round(metrics.operatingMargin),
