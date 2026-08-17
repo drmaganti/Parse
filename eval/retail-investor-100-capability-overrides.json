@@ -1,0 +1,71 @@
+{
+  "_comment": "The original retail-investor-100 query text is frozen. These expectation-only overrides record deliberate product capability changes after the corpus was authored.",
+  "overrides": {
+    "R079": {
+      "filters": [
+        {"field":"sector","op":"in","value":"Technology|Healthcare"},
+        {"field":"pe","op":"<","value":30},
+        {"field":"revGrowth","op":">","value":15}
+      ]
+    },
+    "R080": {
+      "filters": [
+        {"field":"sector","op":"in","value":"Financials|Industrials"},
+        {"field":"beta","op":"<","value":1.1},
+        {"field":"pb","op":"<","value":3},
+        {"field":"roic","op":">","value":10}
+      ]
+    },
+    "R090": {
+      "filters": [
+        {"field":"sector","op":"==","value":"Industrials"},
+        {"field":"roe","op":">","value":15},
+        {"field":"pe","op":"<","value":20},
+        {"field":"debtEquity","op":"<","value":1},
+        {"field":"revGrowth","op":">","value":5}
+      ],
+      "assumptionNeedles": []
+    },
+    "R091": {
+      "filters": [
+        {"field":"sector","op":"==","value":"Technology"},
+        {"field":"peg","op":"<","value":1.5},
+        {"field":"revGrowth","op":">","value":20},
+        {"field":"pe","op":"<","value":35},
+        {"field":"beta","op":"<","value":1.4}
+      ],
+      "assumptionNeedles": []
+    },
+    "R092": {
+      "filters": [
+        {"field":"sector","op":"==","value":"Healthcare"},
+        {"field":"currentRatio","op":">","value":2},
+        {"field":"debtEquity","op":"<","value":0.5},
+        {"field":"operatingMargin","op":">","value":15},
+        {"field":"pe","op":"<","value":30}
+      ],
+      "assumptionNeedles": []
+    },
+    "R093": {
+      "assumptionNeedles": ["net-debt"]
+    },
+    "R095": {
+      "filters": [
+        {"field":"sector","op":"==","value":"Technology"},
+        {"field":"forwardPe","op":"<","value":25},
+        {"field":"revGrowth","op":">","value":15},
+        {"field":"roic","op":">","value":12}
+      ],
+      "assumptionNeedles": []
+    },
+    "R096": {
+      "filters": [
+        {"field":"sector","op":"==","value":"Financials"},
+        {"field":"earningsYield","op":">","value":6},
+        {"field":"pb","op":"<","value":2},
+        {"field":"beta","op":"<","value":1}
+      ],
+      "assumptionNeedles": []
+    }
+  }
+}
