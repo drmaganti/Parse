@@ -4,17 +4,17 @@ const cases = [
   {
     name: "double digit EPS without horizon is surfaced",
     query: "Show me companies growing both revenue and EPS double digits with low leverage.",
-    mustInclude: [/EPS\/earnings growth needs a time horizon/i, /Low debt\/leverage/i],
+    mustInclude: [/EPS\/earnings growth needs a time horizon/i, /low debt\/leverage.*below 1.*Parse.*default/i],
   },
   {
     name: "quality style with intervening sector is surfaced",
     query: "Quality tech stocks: high ROIC, strong margins, low leverage, and reasonable valuation.",
-    mustInclude: [/Quality.*investment style/i, /High ROIC/i, /Strong margins/i, /Low debt\/leverage/i, /Reasonable valuation/i],
+    mustInclude: [/Quality.*investment style/i, /High ROIC/i, /Strong margins/i, /low debt\/leverage.*below 1.*Parse.*default/i, /reasonable valuation.*P\/E below 25.*Parse.*default/i],
   },
   {
-    name: "high quality growth style uses disclosed growth default",
+    name: "high quality growth style uses disclosed defaults",
     query: "Find high-quality growth stocks with strong margins, high ROIC, and not-crazy valuations.",
-    mustInclude: [/quality metric|standalone quality/i, /growth stock.*15%.*Parse.*default/i, /Strong margins/i, /High ROIC/i, /Reasonable valuation/i],
+    mustInclude: [/quality metric|standalone quality/i, /growth stock.*15%.*Parse.*default/i, /Strong margins/i, /High ROIC/i, /reasonable valuation.*P\/E below 25.*Parse.*default/i],
   },
   {
     name: "explicit 5Y dividend growth suppresses redundant dividend-grower warning",
@@ -23,9 +23,9 @@ const cases = [
     mustExclude: [/Dividend grower.*needs a growth horizon/i],
   },
   {
-    name: "postpositive low leverage wording is surfaced",
+    name: "postpositive low leverage uses disclosed default",
     query: "High-yield stocks above 5% where free cash flow covers the dividend and leverage is low.",
-    mustInclude: [/Dividend coverage/i, /Low debt\/leverage/i],
+    mustInclude: [/Dividend coverage/i, /low debt\/leverage.*below 1.*Parse.*default/i],
   },
 ];
 
