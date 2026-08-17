@@ -4,6 +4,8 @@ import type { Filter, FilterValue, Op } from "../lib/fields";
 type Expected = { field: string; op: Op; value: FilterValue };
 type Case = { id: string; query: string; expected: Expected[] };
 
+// Frozen after the initial 27 strong / 18 partial / 5 fail product-severity review.
+// Do not rewrite query text to accommodate parser behavior; change expectations only for deliberate capability changes.
 const f = (field: string, op: Op, value: FilterValue): Expected => ({ field, op, value });
 
 const base = (sector: string, growthOp: Op, growth: number): Expected[] => [
