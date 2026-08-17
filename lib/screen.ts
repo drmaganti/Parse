@@ -6,6 +6,10 @@ function passes(stock: StockRow, f: Filter): boolean {
 
   if (meta.kind === "cat") {
     const actual = String((stock as any)[meta.col] ?? "").toLowerCase();
+    if (f.op === "in") {
+      if (!Array.isArray(f.value)) return false;
+      return f.value.some((value) => String(value).toLowerCase() === actual);
+    }
     const expected = String(f.value).toLowerCase();
     if (f.op === "!=") return actual !== expected;
     return actual === expected;
@@ -21,7 +25,7 @@ function passes(stock: StockRow, f: Filter): boolean {
     case ">=": return v >= t;
     case "==": return v === t;
     case "!=": return v !== t;
-    default:   return true;
+    default:   return false;
   }
 }
 
