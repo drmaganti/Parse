@@ -7,7 +7,8 @@ export interface MetricSpan {
 
 export const FUNDAMENTAL_TERMS: [string, string][] = [
   ["forwardPe", "(?:forward\\s+(?:p\\/?e|price[- ]?to[- ]?earnings))"],
-  ["forwardPeg", "(?:forward\\s+peg|\\bpeg\\b|price.?earnings.?to.?growth)"],
+  ["forwardPeg", "(?:forward\\s+peg|forward\\s+price.?earnings.?to.?growth)"],
+  ["peg", "(?:\\bpeg\\b|price.?earnings.?to.?growth)"],
   ["earningsYield", "(?:earnings yield)"],
   ["divGrowth5Y", "(?:(?:5[- ]?year|5y) dividend (?:growth|cagr)|dividend (?:growth|cagr) (?:over )?(?:5[- ]?years|5y))"],
   ["payoutRatio", "(?:payout ratio|dividend payout ratio)"],
