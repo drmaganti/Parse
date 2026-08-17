@@ -141,6 +141,13 @@ export function normalizeScreenQuery(input: string): NormalizedQuery {
     pushAssumption(assumptions, "Read 'low debt/leverage' as debt/equity below 1.0 using Parse's default. Edit the threshold if you mean something different.");
   }
 
+  const highRoicIntent = /\b(?:high|strong|excellent|healthy)\s+roic\b/i;
+  const explicitRoicThreshold = new RegExp(`\\broic\\b[^\\d-]*?(${CMP})\\s*(${NUM})`, "i").test(query);
+  if (highRoicIntent.test(query) && !explicitRoicThreshold) {
+    query = query.replace(highRoicIntent, "ROIC above 15%");
+    pushAssumption(assumptions, "Read 'high ROIC' as ROIC above 15% using Parse's default. Edit the threshold if you mean something different.");
+  }
+
   const reasonableValuationIntent = /\breasonable valuation\b|\breasonably valued\b|\bfair valuation\b|\bfairly valued\b|\bsensible valuation\b|\bnot expensive\b|\bnot[- ]crazy valuation(?:s)?\b/i;
   const explicitValuationMetric = /\b(?:forward\s+)?p\/?e\b|\bp\/?b\b|\bp\/?s\b|\bev\s*(?:to|\/)\s*ebitda\b|\b(?:forward\s+)?peg\b|\bearnings yield\b/i.test(query);
   if (reasonableValuationIntent.test(query) && !explicitValuationMetric) {
