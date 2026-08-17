@@ -116,7 +116,16 @@ export function normalizeScreenQuery(input: string): NormalizedQuery {
     (_m, cmp: string, amount: string) => `dividend yield ${cmp} ${amount}%`
   );
 
-  query = query.replace(/\bgrowth\s+(stocks|companies|names)\b/gi, "growth-style $1");
+  const growthStyle = /\bgrowth\s+(stocks|companies|names)\b/i;
+  if (growthStyle.test(query)) {
+    const explicitGrowthIntent = /\b(?:revenue|sales|eps|earnings|free cash flow|fcf|dividend)\s+(?:growth|cagr)\b|\b3[- ]?(?:year|yr|y)\s+(?:revenue|sales|eps|earnings)\s+(?:growth|cagr)\b|\bgrowing\s+(?:revenue|sales)\b/i.test(query);
+    if (explicitGrowthIntent) {
+      query = query.replace(/\bgrowth\s+(stocks|companies|names)\b/gi, "growth-style $1");
+    } else {
+      query = query.replace(/\bgrowth\s+(stocks|companies|names)\b/gi, "$1 with revenue growth above 15%");
+      pushAssumption(assumptions, "Read 'growth stock' as revenue growth above 15% using Parse's default. Edit the threshold if you mean something different.");
+    }
+  }
 
   query = query.replace(/\bgrowing\s+both\s+revenue\s+and\s+(?:eps|earnings)\s+double[- ]digits?\b/gi, "revenue growth at least 10% and EPS growth double digits");
   query = query.replace(/\bdouble[- ]digit\s+revenue\s+growth\b/gi, "revenue growth at least 10%");
