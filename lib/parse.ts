@@ -5,6 +5,7 @@ import { applyRefinement, validRanking, type RefinementAction } from "./filter-o
 import { coerceActions, coerceFilters, enforceRefinementIntent, extractJsonObject } from "./parse-contract";
 import { ensureIntentCoverage } from "./intent-coverage";
 import { normalizeScreenQuery } from "./query-normalize";
+import { reconcileCoverage } from "./coverage-reconcile";
 
 export interface ParseResult extends ParsedScreen {
   source: "rules" | "model" | "fallback";
@@ -25,6 +26,31 @@ function rankVocab() {
 
 function coverageFields(filters: Filter[], actions: RefinementAction[] | undefined, isRefine: boolean): string[] {
   return isRefine ? (actions ?? []).map((action) => action.field) : filters.map((filter) => filter.field);
+}
+
+async function finalizeResult(query: string, result: ParseResult, isRefine: boolean): Promise<ParseResult> {
+  const knownAssumptions = ensureIntentCoverage(
+    query,
+    coverageFields(result.filters, result.actions, isRefine),
+    result.assumptions
+  );
+  const reconciled = await reconcileCoverage(query, { ...result, assumptions: knownAssumptions }, isRefine);
+  const assumptions = ensureIntentCoverage(
+    query,
+    coverageFields(reconciled.filters, reconciled.actions, isRefine),
+    reconciled.assumptions
+  );
+
+  if (result.source === "fallback" && assumptions.length === 0) {
+    assumptions.push("That request includes language Parse could not confidently map to a supported criterion.");
+  }
+
+  return {
+    ...result,
+    ...reconciled,
+    assumptions,
+    source: result.source,
+  };
 }
 
 function buildNewSystem(): string {
@@ -84,16 +110,11 @@ export async function parseQuery(
 
   const rules = tryRuleParse(normalized.query, isRefine ? prev : [], currentRanking, resolvedMode);
   if (rules) {
-    const assumptions = ensureIntentCoverage(
-      query,
-      coverageFields(rules.filters, rules.actions, isRefine),
-      [...rules.assumptions, ...normalized.assumptions]
-    );
-    return {
+    return finalizeResult(query, {
       ...rules,
-      assumptions,
+      assumptions: [...rules.assumptions, ...normalized.assumptions],
       source: "rules",
-    };
+    }, isRefine);
   }
 
   try {
@@ -107,15 +128,14 @@ export async function parseQuery(
       const mergedAssumptions = [...rawAssumptions, ...normalized.assumptions];
       if (!actions.length && nextRanking === currentRanking && mergedAssumptions.length === 0) throw new Error("no valid refinement actions");
       const filters = applyRefinement(prev, actions, "ai");
-      const assumptions = ensureIntentCoverage(query, coverageFields(filters, actions, true), mergedAssumptions);
-      return {
+      return finalizeResult(query, {
         filters,
         ranking: nextRanking,
         interpretation: typeof parsed.interpretation === "string" ? parsed.interpretation : "Updated the screen.",
-        assumptions,
+        assumptions: mergedAssumptions,
         actions,
         source: "model",
-      };
+      }, true);
     }
 
     const filters = coerceFilters(parsed.filters);
@@ -123,24 +143,21 @@ export async function parseQuery(
     const rawAssumptions = Array.isArray(parsed.assumptions) ? parsed.assumptions.filter((a: any) => typeof a === "string") : [];
     const mergedAssumptions = [...rawAssumptions, ...normalized.assumptions];
     if (!filters.length && !parsedRanking && mergedAssumptions.length === 0) throw new Error("no valid screen output");
-    const assumptions = ensureIntentCoverage(query, coverageFields(filters, undefined, false), mergedAssumptions);
-    return {
+    return finalizeResult(query, {
       filters,
       ranking: parsedRanking ?? "marketCap",
       interpretation: typeof parsed.interpretation === "string" ? parsed.interpretation : "Interpreted your request into the filters below.",
-      assumptions,
+      assumptions: mergedAssumptions,
       source: "model",
-    };
+    }, false);
   } catch {
     const fallback = fallbackParse(normalized.query, isRefine ? prev : [], [], currentRanking, isRefine);
-    fallback.assumptions = ensureIntentCoverage(
-      query,
-      coverageFields(fallback.filters, fallback.actions, isRefine),
-      [...fallback.assumptions, ...normalized.assumptions]
-    );
-    if (fallback.assumptions.length === 0) fallback.assumptions = ["That request includes language Parse could not confidently map to a supported criterion."];
     if (!fallback.actions?.length && isRefine) fallback.interpretation = "No supported screen change was found.";
     else if (!fallback.filters.length) fallback.interpretation = "No supported filter was found.";
-    return { ...fallback, source: "fallback" };
+    return finalizeResult(query, {
+      ...fallback,
+      assumptions: [...fallback.assumptions, ...normalized.assumptions],
+      source: "fallback",
+    }, isRefine);
   }
 }
