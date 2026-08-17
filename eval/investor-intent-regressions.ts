@@ -9,12 +9,12 @@ const cases = [
   {
     name: "quality style with intervening sector is surfaced",
     query: "Quality tech stocks: high ROIC, strong margins, low leverage, and reasonable valuation.",
-    mustInclude: [/Quality.*investment style/i, /High ROIC/i, /Strong margins/i, /low debt\/leverage.*below 1.*Parse.*default/i, /reasonable valuation.*P\/E below 25.*Parse.*default/i],
+    mustInclude: [/Quality.*investment style/i, /high ROIC.*15%.*Parse.*default/i, /Strong margins/i, /low debt\/leverage.*below 1.*Parse.*default/i, /reasonable valuation.*P\/E below 25.*Parse.*default/i],
   },
   {
     name: "high quality growth style uses disclosed defaults",
     query: "Find high-quality growth stocks with strong margins, high ROIC, and not-crazy valuations.",
-    mustInclude: [/quality metric|standalone quality/i, /growth stock.*15%.*Parse.*default/i, /Strong margins/i, /High ROIC/i, /reasonable valuation.*P\/E below 25.*Parse.*default/i],
+    mustInclude: [/quality metric|standalone quality/i, /growth stock.*15%.*Parse.*default/i, /Strong margins/i, /high ROIC.*15%.*Parse.*default/i, /reasonable valuation.*P\/E below 25.*Parse.*default/i],
   },
   {
     name: "explicit 5Y dividend growth suppresses redundant dividend-grower warning",
