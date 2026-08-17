@@ -1,0 +1,25 @@
+name: retail-ingest-smoke
+
+on:
+  push:
+    branches: [agent/retail-investor-p0-p2]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - name: Ingest two symbols through production cache path
+        env:
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          UNIVERSE_LIMIT: "2"
+          CANDLE_SOURCE: "none"
+        run: npm run ingest
