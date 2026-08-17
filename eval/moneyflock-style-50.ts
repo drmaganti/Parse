@@ -113,6 +113,8 @@ async function run() {
   console.log(`FAIL: ${fail}/50`);
   console.log(`NON-PASS: ${defects.map((d) => d.id).join(", ") || "none"}`);
   console.log("\nDEFECT_JSON=" + JSON.stringify(defects));
+
+  if (partial > 0 || fail > 0) process.exit(1);
 }
 
 run().catch((err) => { console.error(err); process.exit(1); });
