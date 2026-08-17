@@ -1,4 +1,4 @@
-import { parseQuery } from "../../../../lib/parse";
+import { parseQuery } from "../../../lib/parse";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
