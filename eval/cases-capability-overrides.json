@@ -1,0 +1,16 @@
+{
+  "_comment": "Expectation-only changes required by the no-hidden-guess parser policy. Original evaluation query text remains unchanged.",
+  "overrides": {
+    "High yield financials": {
+      "expect": {
+        "filters": [{"field":"sector","op":"==","value":"Financials"}],
+        "ranking":"dividend",
+        "filterCount":1
+      },
+      "requireAssumptions": true
+    },
+    "Also require free cash flow growth": {
+      "requireAssumptions": true
+    }
+  }
+}
