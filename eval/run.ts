@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { parseQuery } from "../lib/parse";
 import { fallbackParse } from "../lib/fallback-parse";
 import { normalizeScreenQuery } from "../lib/query-normalize";
+import { ensureIntentCoverage } from "../lib/intent-coverage";
 import { evaluateCase, hydrate, type EvalCase } from "./harness";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -42,7 +43,8 @@ function parseOffline(c: EvalCase, previous: ReturnType<typeof hydrate>, ranking
     ranking,
     mode === "refine"
   );
-  result.assumptions = [...result.assumptions, ...normalized.assumptions];
+  const assumptions = [...result.assumptions, ...normalized.assumptions];
+  result.assumptions = ensureIntentCoverage(c.query, result.filters.map((f) => f.field), assumptions);
   return { ...result, source: "rules" as const };
 }
 
