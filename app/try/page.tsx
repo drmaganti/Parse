@@ -243,9 +243,11 @@ function formatMetricCell(col: keyof StockRow, value: any) {
 function FilterChip({ f, onEdit, onRemove }: { f: Filter; onEdit: (id: string, patch: Partial<Filter>) => void; onRemove: (id: string) => void }) {
   const meta = FIELDS[f.field];
   const sector = meta?.kind === "cat";
+  const displayOp = sector ? (f.op === "in" ? "is one of" : f.op === "!=" ? "is not" : "is") : f.op;
+  const displayValue = sector && f.op === "in" ? String(f.value).split("|").join(" or ") : String(f.value);
   return <div style={{ display: "inline-flex", alignItems: "center", gap: 6, border: `1px solid ${f.source === "user" ? "#C9CEF3" : T.border}`, background: f.source === "user" ? T.accentSoft : T.surfaceAlt, borderRadius: 9, padding: "6px 8px" }}>
-    <span style={{ fontFamily: MONO, fontSize: 12.5 }}>{meta?.label || f.field} {f.op}</span>
-    {sector ? <span style={{ fontFamily: MONO, fontSize: 12.5 }}>{String(f.value)}</span> : <input type="number" value={String(f.value)} onChange={(e) => onEdit(f.id, { value: e.target.value === "" ? "" : Number(e.target.value) })} style={{ width: 62, border: `1px solid ${T.border}`, borderRadius: 6, padding: "3px 5px", fontFamily: MONO, fontSize: 12.5 }} />}
+    <span style={{ fontFamily: MONO, fontSize: 12.5 }}>{meta?.label || f.field} {displayOp}</span>
+    {sector ? <span style={{ fontFamily: MONO, fontSize: 12.5 }}>{displayValue}</span> : <input type="number" value={String(f.value)} onChange={(e) => onEdit(f.id, { value: e.target.value === "" ? "" : Number(e.target.value) })} style={{ width: 62, border: `1px solid ${T.border}`, borderRadius: 6, padding: "3px 5px", fontFamily: MONO, fontSize: 12.5 }} />}
     <button onClick={() => onRemove(f.id)} aria-label="Remove filter" style={{ border: 0, background: "transparent", color: T.inkSoft, padding: 0 }}>×</button>
   </div>;
 }
