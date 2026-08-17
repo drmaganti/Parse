@@ -34,14 +34,16 @@ export const FIELDS: Record<string, FieldMeta> = {
   sector:      { key: "sector",      col: "sector",        label: "Sector",     kind: "cat" },
 };
 
-export type Op = "<" | "<=" | ">" | ">=" | "==" | "!=";
-export const OPS: Op[] = ["<", "<=", ">", ">=", "==", "!="];
+export type Op = "<" | "<=" | ">" | ">=" | "==" | "!=" | "in";
+export const OPS: Op[] = ["<", "<=", ">", ">=", "==", "!=", "in"];
+
+export type FilterValue = number | string | string[];
 
 export interface Filter {
   id: string;
   field: string;
   op: Op;
-  value: number | string;
+  value: FilterValue;
   source: "ai" | "user" | "default";
 }
 
