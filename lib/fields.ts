@@ -16,7 +16,8 @@ export const FIELDS: Record<string, FieldMeta> = {
   forwardPe:   { key: "forwardPe",   col: "forward_pe",    label: "Forward P/E", kind: "num" },
   pb:          { key: "pb",          col: "pb",            label: "P/B",        kind: "num" },
   ps:          { key: "ps",          col: "ps",            label: "P/S",        kind: "num" },
-  forwardPeg:  { key: "forwardPeg",  col: "forward_peg",   label: "PEG (forward)", kind: "num" },
+  peg:         { key: "peg",         col: "peg",           label: "PEG",        kind: "num" },
+  forwardPeg:  { key: "forwardPeg",  col: "forward_peg",   label: "Forward PEG", kind: "num" },
   earningsYield:{ key: "earningsYield", col: "earnings_yield", label: "Earnings yield", kind: "num", unit: "%" },
   divYield:    { key: "divYield",    col: "div_yield",     label: "Div yield",  kind: "num", unit: "%" },
   divGrowth5Y: { key: "divGrowth5Y", col: "div_growth_5y", label: "Dividend growth 5Y", kind: "num", unit: "%" },
@@ -72,6 +73,7 @@ export interface StockRow {
   forward_pe: number | null;
   pb: number | null;
   ps: number | null;
+  peg: number | null;
   forward_peg: number | null;
   earnings_yield: number | null;
   div_yield: number | null;
