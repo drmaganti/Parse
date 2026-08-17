@@ -3,7 +3,7 @@
 // goes through `throttle`, so the whole nightly run self-limits.
 
 const BASE = "https://finnhub.io/api/v1";
-const MIN_INTERVAL_MS = Math.ceil(60000 / 55); // ~1091ms between calls
+const MIN_INTERVAL_MS = Math.ceil(60000 / 55);
 
 let lastCall = 0;
 async function throttle() {
@@ -18,7 +18,6 @@ async function get(path: string, key: string): Promise<any> {
   const sep = path.includes("?") ? "&" : "?";
   const res = await fetch(`${BASE}${path}${sep}token=${key}`);
   if (res.status === 429) {
-    // Backoff once, then retry.
     await new Promise((r) => setTimeout(r, 2500));
     return get(path, key);
   }
@@ -27,19 +26,29 @@ async function get(path: string, key: string): Promise<any> {
 }
 
 export interface Metrics {
-  marketCap?: number;   // reported in millions by Finnhub
+  marketCap?: number;
   pe?: number;
+  forwardPe?: number;
   pb?: number;
   ps?: number;
+  peg?: number;
+  forwardPeg?: number;
+  earningsYield?: number;
   divYield?: number;
+  divGrowth5Y?: number;
+  payoutRatio?: number;
   beta?: number;
   revGrowth?: number;
   roic?: number;
+  roe?: number;
+  grossMargin?: number;
   operatingMargin?: number;
   fcfMargin?: number;
   fcfYield?: number;
   debtEquity?: number;
   interestCoverage?: number;
+  currentRatio?: number;
+  quickRatio?: number;
   revGrowth3Y?: number;
   epsGrowth3Y?: number;
   evEbitda?: number;
@@ -57,25 +66,38 @@ export async function fetchMetrics(symbol: string, key: string): Promise<Metrics
   const marketCap = num(m.marketCapitalization);
   const enterpriseValue = num(m.enterpriseValue);
   const evFcf = num(m["currentEv/freeCashFlowTTM"]);
+  const pe = num(m.peTTM ?? m.peBasicExclExtraTTM);
   const roicAnnual = latestAnnual(d?.series, "roic");
   const fcfMarginAnnual = latestAnnual(d?.series, "fcfMargin");
   const fcfYield = enterpriseValue != null && marketCap != null && marketCap > 0 && evFcf != null && evFcf !== 0
     ? (enterpriseValue / evFcf / marketCap) * 100
     : undefined;
+  const earningsYield = pe != null && pe > 0 ? 100 / pe : undefined;
+
   return {
-    marketCap,                                               // millions
-    pe: num(m.peTTM ?? m.peBasicExclExtraTTM),
+    marketCap,
+    pe,
+    forwardPe: num(m.forwardPE),
     pb: num(m.pbQuarterly ?? m.pbAnnual),
     ps: num(m.psTTM),
+    peg: num(m.pegTTM),
+    forwardPeg: num(m.forwardPEG),
+    earningsYield,
     divYield: num(m.dividendYieldIndicatedAnnual ?? m.currentDividendYieldTTM),
+    divGrowth5Y: num(m.dividendGrowthRate5Y),
+    payoutRatio: num(m.payoutRatioTTM ?? m.payoutRatioAnnual),
     beta: num(m.beta),
     revGrowth: num(m.revenueGrowthTTMYoy),
     roic: roicAnnual == null ? undefined : roicAnnual * 100,
+    roe: num(m.roeTTM ?? m.roeRfy),
+    grossMargin: num(m.grossMarginTTM ?? m.grossMarginAnnual),
     operatingMargin: num(m.operatingMarginTTM),
     fcfMargin: fcfMarginAnnual == null ? undefined : fcfMarginAnnual * 100,
     fcfYield,
     debtEquity: num(m["totalDebt/totalEquityQuarterly"]),
     interestCoverage: num(m.netInterestCoverageTTM),
+    currentRatio: num(m.currentRatioQuarterly ?? m.currentRatioAnnual),
+    quickRatio: num(m.quickRatioQuarterly ?? m.quickRatioAnnual),
     revGrowth3Y: num(m.revenueGrowth3Y),
     epsGrowth3Y: num(m.epsGrowth3Y),
     evEbitda: num(m.evEbitdaTTM),
@@ -88,7 +110,6 @@ export async function fetchQuote(symbol: string, key: string) {
   return { price: num(q?.c), prevClose: num(q?.pc) };
 }
 
-// Daily candles for indicator math. Returns oldest→newest closes and highs.
 export async function fetchCandles(
   symbol: string,
   key: string,
@@ -113,9 +134,6 @@ function latestAnnual(series: any, key: string): number | undefined {
   return num(latest?.v);
 }
 
-// Collapse Finnhub's fine-grained industries into the sectors our vocabulary uses.
-// Match healthcare before technology and use word-aware tech patterns so
-// "biotechnology" is not accidentally classified as Technology.
 export function mapSector(industry?: string): string | null {
   if (!industry) return null;
   const s = industry.toLowerCase();

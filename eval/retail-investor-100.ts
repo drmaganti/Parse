@@ -14,6 +14,7 @@ type TestCase = {
 };
 
 type Dataset = { cases: TestCase[] };
+type CapabilityOverrides = { overrides: Record<string, Partial<Omit<TestCase, "id" | "query" | "category">>> };
 
 function key(f: Expected | Filter): string {
   return `${f.field}|${f.op}|${String(f.value)}`;
@@ -43,14 +44,19 @@ function diff(expected: Expected[], actual: Filter[]) {
 
 async function run() {
   const file = path.join(process.cwd(), "eval", "retail-investor-100.json");
+  const overrideFile = path.join(process.cwd(), "eval", "retail-investor-100-capability-overrides.json");
   const data = JSON.parse(fs.readFileSync(file, "utf8")) as Dataset;
+  const capability = fs.existsSync(overrideFile)
+    ? JSON.parse(fs.readFileSync(overrideFile, "utf8")) as CapabilityOverrides
+    : { overrides: {} };
+  const cases = data.cases.map((c) => ({ ...c, ...(capability.overrides[c.id] ?? {}) }));
   const category = new Map<string, { passed: number; total: number }>();
   const failures: Array<{ c: TestCase; missing: string[]; unexpected: string[]; assumptionFailures: string[]; actual: Filter[]; assumptions: string[] }> = [];
   let expectedSignals = 0;
   let matchedSignals = 0;
   let unexpectedSignals = 0;
 
-  for (const c of data.cases) {
+  for (const c of cases) {
     const result = await parseQuery(c.query, [], [], "marketCap", "new");
     const { missing, unexpected } = diff(c.filters, result.filters);
     expectedSignals += c.filters.length;
@@ -75,15 +81,16 @@ async function run() {
     if (!passed) failures.push({ c, missing, unexpected, assumptionFailures, actual: result.filters, assumptions: result.assumptions });
   }
 
-  const passed = data.cases.length - failures.length;
-  console.log(`Retail-investor-100: ${passed}/${data.cases.length} exact statements passed (${(passed / data.cases.length * 100).toFixed(1)}%).`);
+  const passed = cases.length - failures.length;
+  console.log(`Retail-investor-100: ${passed}/${cases.length} exact statements passed (${(passed / cases.length * 100).toFixed(1)}%).`);
   console.log(`Signals: ${matchedSignals}/${expectedSignals} expected matched (${(matchedSignals / expectedSignals * 100).toFixed(1)}%); ${unexpectedSignals} unexpected.`);
+  console.log(`Capability expectation overrides: ${Object.keys(capability.overrides).length}; frozen query text unchanged.`);
   console.log("CATEGORY RESULTS");
   for (const [name, stats] of category) console.log(`${name.padEnd(18)} ${stats.passed}/${stats.total}`);
 
   console.log("PASSED CASES");
   const failedIds = new Set(failures.map((f) => f.c.id));
-  for (const c of data.cases) if (!failedIds.has(c.id)) console.log(`PASS ${c.id} | ${c.query}`);
+  for (const c of cases) if (!failedIds.has(c.id)) console.log(`PASS ${c.id} | ${c.query}`);
 
   if (failures.length) {
     console.log("FAILED CASES");

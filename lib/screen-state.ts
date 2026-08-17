@@ -13,7 +13,7 @@ export interface ScreenState {
   universe?: ScreenUniverse;
 }
 
-const OPS = new Set<Op>(["<", "<=", ">", ">=", "==", "!="]);
+const OPS = new Set<Op>(["<", "<=", ">", ">=", "==", "!=", "in"]);
 
 export function encodeScreenState(state: ScreenState): string {
   const payload = {

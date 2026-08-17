@@ -1,9 +1,10 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { parseQuery } from "../lib/parse";
 import { fallbackParse } from "../lib/fallback-parse";
 import { normalizeScreenQuery } from "../lib/query-normalize";
+import { ensureIntentCoverage } from "../lib/intent-coverage";
 import { evaluateCase, hydrate, type EvalCase } from "./harness";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -11,9 +12,26 @@ const OFFLINE = process.env.OFFLINE === "1";
 const MODEL_RUNS = Math.max(1, Number(process.env.MODEL_RUNS || 1));
 const MODEL_MIN_PASS_RATE = Number(process.env.MODEL_MIN_PASS_RATE || 0.95);
 
+type EvalOverrides = { overrides: Record<string, Partial<EvalCase>> };
+
 function load(name: string): EvalCase[] {
   const raw = JSON.parse(readFileSync(join(__dir, name), "utf8"));
   return raw.cases || [];
+}
+
+function loadOverrides(): EvalOverrides {
+  const file = join(__dir, "cases-capability-overrides.json");
+  return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) as EvalOverrides : { overrides: {} };
+}
+
+function applyOverride(c: EvalCase, overrides: EvalOverrides): EvalCase {
+  const patch = overrides.overrides[c.query];
+  if (!patch) return c;
+  return {
+    ...c,
+    ...patch,
+    expect: patch.expect ? { ...(c.expect ?? {}), ...patch.expect } : c.expect,
+  };
 }
 
 function parseOffline(c: EvalCase, previous: ReturnType<typeof hydrate>, ranking: string, mode: "new" | "refine") {
@@ -25,18 +43,22 @@ function parseOffline(c: EvalCase, previous: ReturnType<typeof hydrate>, ranking
     ranking,
     mode === "refine"
   );
-  result.assumptions = [...result.assumptions, ...normalized.assumptions];
+  const assumptions = [...result.assumptions, ...normalized.assumptions];
+  result.assumptions = ensureIntentCoverage(c.query, result.filters.map((f) => f.field), assumptions);
   return { ...result, source: "rules" as const };
 }
 
 async function run() {
-  const allCases = [...load("cases.json"), ...load("adversarial-cases.json"), ...load("release-regressions.json")];
+  const overrides = loadOverrides();
+  const allCases = [...load("cases.json"), ...load("adversarial-cases.json"), ...load("release-regressions.json")]
+    .map((c) => applyOverride(c, overrides));
   const cases = OFFLINE ? allCases.filter((c) => !c.modelOnly) : allCases;
   const provider = OFFLINE ? "rules (offline)" : (process.env.LLM_PROVIDER ?? "groq");
   const repeats = OFFLINE ? 1 : MODEL_RUNS;
   const report: any = { provider, offline: OFFLINE, repeats, cases: cases.length, runs: [] };
 
-  console.log(`\nParse eval · ${cases.length}/${allCases.length} cases · ${provider} · ${repeats} run(s)\n`);
+  console.log(`\nParse eval · ${cases.length}/${allCases.length} cases · ${provider} · ${repeats} run(s)`);
+  console.log(`Expectation-only capability overrides: ${Object.keys(overrides.overrides).length}; query text unchanged.\n`);
 
   let overallPasses = 0;
   let overallAttempts = 0;

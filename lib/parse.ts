@@ -5,6 +5,7 @@ import { applyRefinement, validRanking, type RefinementAction } from "./filter-o
 import { coerceActions, coerceFilters, enforceRefinementIntent, extractJsonObject } from "./parse-contract";
 import { ensureIntentCoverage } from "./intent-coverage";
 import { normalizeScreenQuery } from "./query-normalize";
+import { reconcileCoverage } from "./coverage-reconcile";
 
 export interface ParseResult extends ParsedScreen {
   source: "rules" | "model" | "fallback";
@@ -27,15 +28,54 @@ function coverageFields(filters: Filter[], actions: RefinementAction[] | undefin
   return isRefine ? (actions ?? []).map((action) => action.field) : filters.map((filter) => filter.field);
 }
 
+function protectQualitativeMetrics(original: string, normalized: ReturnType<typeof normalizeScreenQuery>) {
+  const cmp = "no more than|no less than|at most|less than|lower than|under|below|<=|<|at least|more than|greater than|over|above|>=|>";
+  const explicitLowBeta = new RegExp(`\\blow\\s+beta\\s*(?:is\\s*)?(?:${cmp})\\s*-?\\d+(?:\\.\\d+)?`, "i").test(original);
+  if (/\blow beta\b/i.test(original) && !explicitLowBeta) {
+    normalized.query = normalized.query.replace(/\blow beta\b/gi, "risk preference");
+    const warning = "'Low beta' needs an explicit beta threshold; Parse left that criterion out rather than guess.";
+    if (!normalized.assumptions.includes(warning)) normalized.assumptions.push(warning);
+  }
+  return normalized;
+}
+
+async function finalizeResult(query: string, result: ParseResult, isRefine: boolean): Promise<ParseResult> {
+  const knownAssumptions = ensureIntentCoverage(
+    query,
+    coverageFields(result.filters, result.actions, isRefine),
+    result.assumptions
+  );
+  const reconciled = await reconcileCoverage(query, { ...result, assumptions: knownAssumptions }, isRefine);
+  const assumptions = ensureIntentCoverage(
+    query,
+    coverageFields(reconciled.filters, reconciled.actions, isRefine),
+    reconciled.assumptions
+  );
+
+  if (result.source === "fallback" && assumptions.length === 0) {
+    assumptions.push("That request includes language Parse could not confidently map to a supported criterion.");
+  }
+
+  return {
+    ...result,
+    ...reconciled,
+    assumptions,
+    source: result.source,
+  };
+}
+
 function buildNewSystem(): string {
   return [
     "You convert a plain-English US stock screen into strict JSON.",
     `Only use these filter fields: ${vocab()}.`,
-    "Numeric operators: <, <=, >, >=, ==. Categorical sector operators: == and !=.",
+    "Numeric operators: <, <=, >, >=, ==. Categorical sector operators: ==, !=, and in.",
+    "For sector in, value must be an array of two or more valid sectors. Example: Technology and Healthcare => {field:'sector',op:'in',value:['Technology','Healthcare']}.",
     "Copy explicit numeric thresholds exactly. Do not make them stricter, looser, or round them.",
     "A range is represented as two filters on the same field. Example: P/E between 10 and 20 => pe>=10 and pe<=20.",
     "For exclusions such as 'exclude Energy', use sector != Energy.",
     "Do not add unrelated filters just because they are common in investing.",
+    "Do not invent numeric thresholds for qualitative words unless they have already been expanded into an explicit documented Parse default in the normalized request.",
+    "When the normalized request contains an explicit Parse-default threshold, treat it like any other explicit criterion and preserve it exactly.",
     "If the request asks for an unsupported metric, do not substitute another metric. Omit the unsupported criterion and record it in assumptions. If nothing supported remains, return an empty filters array.",
     `Ranking must be exactly one of: ${rankVocab()}.`,
     "Ranking-only requests may return an empty filters array.",
@@ -48,7 +88,8 @@ function buildRefineSystem(previous: Filter[], currentRanking: string): string {
   return [
     "You update an existing stock screen from one short user instruction. This is NOT a conversation and you must not regenerate unrelated criteria.",
     `Only use these filter fields: ${vocab()}.`,
-    "Numeric operators: <, <=, >, >=, ==. Categorical sector operators: == and !=.",
+    "Numeric operators: <, <=, >, >=, ==. Categorical sector operators: ==, !=, and in.",
+    "For sector in, value must be an array of two or more valid sectors.",
     "Copy explicit numeric thresholds exactly. Do not make them stricter, looser, or round them.",
     `Current filters: ${JSON.stringify(previous.map(({ field, op, value, source }) => ({ field, op, value, source })))}.`,
     `Current ranking: ${currentRanking}.`,
@@ -59,6 +100,8 @@ function buildRefineSystem(previous: Filter[], currentRanking: string): string {
     "Never change a numeric threshold merely because a new criterion was added.",
     "Ranges are two add actions on the same field unless the user explicitly replaces that field.",
     "Exclusions such as 'exclude Energy' use an add action with sector != Energy; exclusion is not a remove action.",
+    "Multiple included sectors use one sector in action, not multiple sector == actions.",
+    "When the normalized instruction contains an explicit Parse-default threshold, treat it like an explicit user-facing criterion and preserve it exactly.",
     "If the instruction asks for an unsupported metric, return no action for that criterion and record it in assumptions. Never substitute a supported metric.",
     `If ranking changes, ranking must be one of: ${rankVocab()}; otherwise return null.`,
     'Respond ONLY with minified JSON: {"actions":[{"type":"add","field":"revGrowth","op":">","value":10}],"ranking":null,"interpretation":"one short sentence","assumptions":[]}',
@@ -74,67 +117,58 @@ export async function parseQuery(
 ): Promise<ParseResult> {
   const isRefine = mode ? mode === "refine" : prev.length > 0;
   const resolvedMode: ParseMode = isRefine ? "refine" : "new";
-  const normalized = normalizeScreenQuery(query);
+  const normalized = protectQualitativeMetrics(query, normalizeScreenQuery(query));
 
-  // The rules path must understand the whole supported intent, including
-  // explicit negations and a small set of transparent fuzzy translations.
   const rules = tryRuleParse(normalized.query, isRefine ? prev : [], currentRanking, resolvedMode);
   if (rules) {
-    const assumptions = ensureIntentCoverage(
-      query,
-      coverageFields(rules.filters, rules.actions, isRefine),
-      [...rules.assumptions, ...normalized.assumptions]
-    );
-    return {
+    return finalizeResult(query, {
       ...rules,
-      assumptions,
+      assumptions: [...rules.assumptions, ...normalized.assumptions],
       source: "rules",
-    };
+    }, isRefine);
   }
 
   try {
-    const rawText = await complete({ system: isRefine ? buildRefineSystem(prev, currentRanking) : buildNewSystem(), user: query });
+    const rawText = await complete({ system: isRefine ? buildRefineSystem(prev, currentRanking) : buildNewSystem(), user: normalized.query });
     const parsed = extractJsonObject(rawText);
 
     if (isRefine) {
       const actions = enforceRefinementIntent(query, coerceActions(parsed.actions));
       const nextRanking = validRanking(parsed.ranking) ?? currentRanking;
       const rawAssumptions = Array.isArray(parsed.assumptions) ? parsed.assumptions.filter((a: any) => typeof a === "string") : [];
-      if (!actions.length && nextRanking === currentRanking && rawAssumptions.length === 0) throw new Error("no valid refinement actions");
+      const mergedAssumptions = [...rawAssumptions, ...normalized.assumptions];
+      if (!actions.length && nextRanking === currentRanking && mergedAssumptions.length === 0) throw new Error("no valid refinement actions");
       const filters = applyRefinement(prev, actions, "ai");
-      const assumptions = ensureIntentCoverage(query, coverageFields(filters, actions, true), rawAssumptions);
-      return {
+      return finalizeResult(query, {
         filters,
         ranking: nextRanking,
         interpretation: typeof parsed.interpretation === "string" ? parsed.interpretation : "Updated the screen.",
-        assumptions,
+        assumptions: mergedAssumptions,
         actions,
         source: "model",
-      };
+      }, true);
     }
 
     const filters = coerceFilters(parsed.filters);
     const parsedRanking = validRanking(parsed.ranking);
     const rawAssumptions = Array.isArray(parsed.assumptions) ? parsed.assumptions.filter((a: any) => typeof a === "string") : [];
-    if (!filters.length && !parsedRanking && rawAssumptions.length === 0) throw new Error("no valid screen output");
-    const assumptions = ensureIntentCoverage(query, coverageFields(filters, undefined, false), rawAssumptions);
-    return {
+    const mergedAssumptions = [...rawAssumptions, ...normalized.assumptions];
+    if (!filters.length && !parsedRanking && mergedAssumptions.length === 0) throw new Error("no valid screen output");
+    return finalizeResult(query, {
       filters,
       ranking: parsedRanking ?? "marketCap",
       interpretation: typeof parsed.interpretation === "string" ? parsed.interpretation : "Interpreted your request into the filters below.",
-      assumptions,
+      assumptions: mergedAssumptions,
       source: "model",
-    };
+    }, false);
   } catch {
     const fallback = fallbackParse(normalized.query, isRefine ? prev : [], [], currentRanking, isRefine);
-    fallback.assumptions = ensureIntentCoverage(
-      query,
-      coverageFields(fallback.filters, fallback.actions, isRefine),
-      [...fallback.assumptions, ...normalized.assumptions]
-    );
-    if (fallback.assumptions.length === 0) fallback.assumptions = ["That request includes language Parse could not confidently map to a supported criterion."];
     if (!fallback.actions?.length && isRefine) fallback.interpretation = "No supported screen change was found.";
     else if (!fallback.filters.length) fallback.interpretation = "No supported filter was found.";
-    return { ...fallback, source: "fallback" };
+    return finalizeResult(query, {
+      ...fallback,
+      assumptions: [...fallback.assumptions, ...normalized.assumptions],
+      source: "fallback",
+    }, isRefine);
   }
 }
