@@ -12,7 +12,7 @@ const SECTOR_ALIASES: Array<[RegExp, string]> = [
   [/\benergy\b/i, "Energy"],
   [/\bindustrials?\b/i, "Industrials"],
   [/\bcommunications?\b/i, "Communications"],
-  [/\butilities?\b/i, "Utilities"],
+  [/\butility\b|\butilities\b/i, "Utilities"],
   [/\bmaterials?\b/i, "Materials"],
   [/\breal estate\b|\breits?\b/i, "Real Estate"],
 ];
