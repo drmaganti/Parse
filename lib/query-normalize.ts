@@ -127,6 +127,27 @@ export function normalizeScreenQuery(input: string): NormalizedQuery {
     }
   }
 
+  const profitableIntent = /\bprofitable\b|\bpositive earnings\b(?!\s+growth)|\bpositive net income\b/i;
+  const explicitProfitabilityMetric = /\b(?:operating|gross|fcf|free cash flow)\s+margin\b/i.test(query);
+  if (profitableIntent.test(query) && !explicitProfitabilityMetric) {
+    query = query.replace(profitableIntent, "operating margin above 0%");
+    pushAssumption(assumptions, "Read 'profitable' as operating margin above 0% using Parse's profitability default. Operating margin is used as the supported profitability indicator and the threshold is editable.");
+  }
+
+  const lowDebtIntent = /\blow debt\b|\blittle debt\b|\bminimal debt\b|\blow leverage\b|\blightly leveraged\b|\bleverage\s+(?:is|looks?)\s+low\b/i;
+  const explicitDebtMetric = /\bdebt\s*(?:to|\/)\s*equity\b/i.test(query);
+  if (lowDebtIntent.test(query) && !explicitDebtMetric) {
+    query = query.replace(lowDebtIntent, "debt/equity below 1");
+    pushAssumption(assumptions, "Read 'low debt/leverage' as debt/equity below 1.0 using Parse's default. Edit the threshold if you mean something different.");
+  }
+
+  const reasonableValuationIntent = /\breasonable valuation\b|\breasonably valued\b|\bfair valuation\b|\bfairly valued\b|\bsensible valuation\b|\bnot expensive\b|\bnot[- ]crazy valuation(?:s)?\b/i;
+  const explicitValuationMetric = /\b(?:forward\s+)?p\/?e\b|\bp\/?b\b|\bp\/?s\b|\bev\s*(?:to|\/)\s*ebitda\b|\b(?:forward\s+)?peg\b|\bearnings yield\b/i.test(query);
+  if (reasonableValuationIntent.test(query) && !explicitValuationMetric) {
+    query = query.replace(reasonableValuationIntent, "P/E below 25");
+    pushAssumption(assumptions, "Read 'reasonable valuation' as P/E below 25 using Parse's default valuation indicator. Edit the threshold or choose another valuation metric if you prefer.");
+  }
+
   query = query.replace(/\bgrowing\s+both\s+revenue\s+and\s+(?:eps|earnings)\s+double[- ]digits?\b/gi, "revenue growth at least 10% and EPS growth double digits");
   query = query.replace(/\bdouble[- ]digit\s+revenue\s+growth\b/gi, "revenue growth at least 10%");
 
