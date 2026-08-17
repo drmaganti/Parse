@@ -1,4 +1,4 @@
-import { RANKINGS, SECTORS, type Filter, type Op } from "./fields";
+import { RANKINGS, SECTORS, type Filter, type FilterValue, type Op } from "./fields";
 import { applyRefinement, sameFilter, type RefinementAction } from "./filter-ops";
 import {
   FUNDAMENTAL_TERMS,
@@ -17,7 +17,7 @@ export interface ParsedScreen {
 }
 
 let counter = 0;
-const mk = (field: string, op: Op, value: number | string): Filter => ({
+const mk = (field: string, op: Op, value: FilterValue): Filter => ({
   id: `${field}_${op}_${counter++}`,
   field, op, value, source: "ai",
 });
@@ -81,12 +81,28 @@ function sectorExcluded(q: string, sec: string): boolean {
   });
 }
 
+function addSectorFilters(out: Filter[], q: string) {
+  const included: string[] = [];
+  const excluded: string[] = [];
+
+  for (const sec of SECTORS) {
+    const named = sectorTokens(sec).some((token) => new RegExp(`\\b${token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(q));
+    if (!named) continue;
+    if (sectorExcluded(q, sec)) excluded.push(sec);
+    else included.push(sec);
+  }
+
+  if (included.length === 1) addUnique(out, mk("sector", "==", included[0]));
+  else if (included.length > 1) addUnique(out, mk("sector", "in", included));
+  for (const sec of excluded) addUnique(out, mk("sector", "!=", sec));
+}
+
 function hasRankingIntent(q: string): boolean {
   return /cheapest first|lowest valuation|highest yield|highest growth|strongest momentum|most beaten|biggest decline|largest first|rank by/.test(q);
 }
 
 function hasKnownUnsupportedMetric(q: string): boolean {
-  return /\broe\b|return on equity|\broa\b|return on assets|(?:free cash flow|\bfcf\b)(?!\s+(?:margin|yield))|debt\s*(?:to|\/)\s*ebitda|\bpeg\b|current ratio|profit growth/.test(q);
+  return /\broe\b|return on equity|\broa\b|return on assets|(?:free cash flow|\bfcf\b)(?!\s+(?:margin|yield))|(?:net )?debt\s*(?:to|\/)\s*ebitda|\bpeg\b|current ratio|quick ratio|profit growth|earnings growth|eps growth|gross margin|payout ratio|dividend growth|tangible book|insider ownership|buyback/.test(q);
 }
 
 function parseFresh(query: string): ParsedScreen {
@@ -99,19 +115,19 @@ function parseFresh(query: string): ParsedScreen {
   let ranking = "marketCap";
   const cmp = "no more than|at most|less than|lower than|under|below|maximum|max|<=|<|at least|minimum|min|more than|greater than|over|above|>=|>";
   const unsupportedMetric = hasKnownUnsupportedMetric(q);
-  if (unsupportedMetric) assumptions.push("One or more requested metrics are not supported yet; unsupported criteria were left out.");
   if (/\bquality (?:companies|stocks|names)\b/.test(genericQ)) assumptions.push("Parse does not have a standalone quality metric yet, so no quality filter was added.");
 
-  addRange(out, "pe", scoped("pe").match(/(?:\bp\/?e\b|price.?to.?earnings)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
-  addRange(out, "pb", scoped("pb").match(/(?:\bp\/?b\b|price.?to.?book)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
-  addRange(out, "ps", scoped("ps").match(/(?:\bp\/?s\b|price.?to.?sales)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
-  addRange(out, "beta", scoped("beta").match(/\bbeta\b[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
-  addRange(out, "marketCap", scoped("marketCap").match(/market\s*cap[^\d-]*between\s*\$?(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*\$?(-?\d+(?:\.\d+)?)/));
-  addRange(out, "revGrowth", scoped("revGrowth").match(/(?:revenue growth|growing revenue|grow(?:ing)? revenue)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
-  addRange(out, "divYield", scoped("divYield").match(/(?:dividend yield|yield(?:ing)?)[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
-  addRange(out, "rsi", scoped("rsi").match(/\brsi\b[^\d-]*between\s*(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*(-?\d+(?:\.\d+)?)/));
+  const between = "[^\\d-]*between\\s*(-?\\d+(?:\\.\\d+)?)\\s*%?\\s*(?:and|to)\\s*(-?\\d+(?:\\.\\d+)?)";
+  addRange(out, "pe", scoped("pe").match(new RegExp(`(?:\\bp\\/?e\\b|price.?to.?earnings)${between}`)));
+  addRange(out, "pb", scoped("pb").match(new RegExp(`(?:\\bp\\/?b\\b|price.?to.?book)${between}`)));
+  addRange(out, "ps", scoped("ps").match(new RegExp(`(?:\\bp\\/?s\\b|price.?to.?sales)${between}`)));
+  addRange(out, "beta", scoped("beta").match(new RegExp(`\\bbeta\\b${between}`)));
+  addRange(out, "marketCap", scoped("marketCap").match(/market\s*cap[^\d-]*between\s*\$?(-?\d+(?:\.\d+)?)\s*(?:b|bn|billion)?\s*(?:and|to)\s*\$?(-?\d+(?:\.\d+)?)/));
+  addRange(out, "revGrowth", scoped("revGrowth").match(new RegExp(`(?:revenue growth|growing revenue|grow(?:ing)? revenue)${between}`)));
+  addRange(out, "divYield", scoped("divYield").match(new RegExp(`(?:dividend yield|yield(?:ing)?)${between}`)));
+  addRange(out, "rsi", scoped("rsi").match(new RegExp(`\\brsi\\b${between}`)));
   for (const [field, term] of FUNDAMENTAL_TERMS) {
-    if (!out.some((f) => f.field === field)) addRange(out, field, scoped(field).match(new RegExp(`${term}[^\\d-]*between\\s*(-?\\d+(?:\\.\\d+)?)\\s*(?:and|to)\\s*(-?\\d+(?:\\.\\d+)?)`)));
+    if (!out.some((f) => f.field === field)) addRange(out, field, scoped(field).match(new RegExp(`${term}${between}`)));
   }
 
   if (!out.some((f) => f.field === "pe")) addThreshold(out, "pe", scoped("pe").match(new RegExp(`(?:\\bp\\/?e\\b|price.?to.?earnings)[^\\d-]*?(${cmp})\\s*\\$?(-?\\d+(?:\\.\\d+)?)`)));
@@ -147,11 +163,10 @@ function parseFresh(query: string): ParsedScreen {
     ranking = "value";
   }
 
-  const qualitativeDividend = /\bdividend\b|income|payout|high[- ]?yield|highest yield/.test(genericQ);
-  if (qualitativeDividend || hasMetricSpan(spans, "divYield")) {
-    if (qualitativeDividend && !out.some((f) => f.field === "divYield") && !/highest yield/.test(genericQ)) addUnique(out, mk("divYield", ">", 3));
-    ranking = "dividend";
-  }
+  // Dividend/income words may choose a ranking, but never create an undisclosed
+  // yield threshold. Numeric dividend-yield filters require explicit yield language.
+  const qualitativeDividend = /\bdividend\b|\bincome\b|\bpayout\b|high[- ]?yield|highest yield/.test(genericQ);
+  if (qualitativeDividend || hasMetricSpan(spans, "divYield")) ranking = "dividend";
 
   const genericGrowth = /\bgrowth (?:stocks|companies|names)\b|\bgrowing (?:technology|tech|healthcare|financial|consumer|industrial|companies|stocks|names)\b|fast-growing|highest growth|growth at a reasonable price|\bgarp\b/.test(genericQ);
   const explicitGrowthMetric = hasMetricSpan(spans, "revGrowth") || hasMetricSpan(spans, "revGrowth3Y");
@@ -187,11 +202,7 @@ function parseFresh(query: string): ParsedScreen {
   else if (/large[- ]?cap|\bbig companies\b|\blarge companies\b/.test(genericQ) && !out.some((f) => f.field === "marketCap")) addUnique(out, mk("marketCap", ">", 50));
   if (/small[- ]?cap/.test(genericQ) && !out.some((f) => f.field === "marketCap")) addUnique(out, mk("marketCap", "<", 20));
 
-  for (const sec of SECTORS) {
-    const named = sectorTokens(sec).some((token) => new RegExp(`\\b${token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(q));
-    if (!named) continue;
-    addUnique(out, mk("sector", sectorExcluded(q, sec) ? "!=" : "==", sec));
-  }
+  addSectorFilters(out, q);
 
   if (/cheapest first|lowest valuation|rank by (?:value|p\/?e)/.test(q)) ranking = "value";
   if (/highest yield|rank by yield/.test(q)) ranking = "dividend";
