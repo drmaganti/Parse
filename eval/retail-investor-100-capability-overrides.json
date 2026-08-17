@@ -16,6 +16,24 @@
         {"field":"roic","op":">","value":10}
       ]
     },
+    "R086": {
+      "filters": [
+        {"field":"sector","op":"==","value":"Technology"},
+        {"field":"operatingMargin","op":">","value":0},
+        {"field":"revGrowth","op":">","value":20},
+        {"field":"debtEquity","op":"<","value":1},
+        {"field":"pe","op":"<","value":30}
+      ]
+    },
+    "R089": {
+      "filters": [
+        {"field":"sector","op":"==","value":"Consumer"},
+        {"field":"pe","op":"<","value":25},
+        {"field":"revGrowth","op":">","value":12},
+        {"field":"fcfMargin","op":">","value":10},
+        {"field":"beta","op":"<","value":1.2}
+      ]
+    },
     "R090": {
       "filters": [
         {"field":"sector","op":"==","value":"Industrials"},
@@ -66,6 +84,14 @@
         {"field":"beta","op":"<","value":1}
       ],
       "assumptionNeedles": []
+    },
+    "R100": {
+      "filters": [
+        {"field":"sector","op":"==","value":"Technology"},
+        {"field":"roic","op":">","value":15},
+        {"field":"debtEquity","op":"<","value":1},
+        {"field":"pe","op":"<","value":25}
+      ]
     }
   }
 }
