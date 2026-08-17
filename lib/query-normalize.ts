@@ -142,7 +142,7 @@ export function normalizeScreenQuery(input: string): NormalizedQuery {
   }
 
   const highRoicIntent = /\b(?:high|strong|excellent|healthy)\s+roic\b/i;
-  const explicitRoicThreshold = new RegExp(`\\broic\\b[^\\d-]*?(${CMP})\\s*(${NUM})`, "i").test(query);
+  const explicitRoicThreshold = new RegExp(`\\broic\\b\\s*(?:is\\s*)?(${CMP})\\s*(${NUM})`, "i").test(query);
   if (highRoicIntent.test(query) && !explicitRoicThreshold) {
     query = query.replace(highRoicIntent, "ROIC above 15%");
     pushAssumption(assumptions, "Read 'high ROIC' as ROIC above 15% using Parse's default. Edit the threshold if you mean something different.");
