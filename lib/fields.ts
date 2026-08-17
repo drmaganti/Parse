@@ -37,7 +37,7 @@ export const FIELDS: Record<string, FieldMeta> = {
 export type Op = "<" | "<=" | ">" | ">=" | "==" | "!=" | "in";
 export const OPS: Op[] = ["<", "<=", ">", ">=", "==", "!=", "in"];
 
-export type FilterValue = number | string | string[];
+export type FilterValue = number | string;
 
 export interface Filter {
   id: string;
@@ -47,8 +47,6 @@ export interface Filter {
   source: "ai" | "user" | "default";
 }
 
-// Ranking keys the model may choose. `score` returns a value sorted ascending,
-// so lower = better rank; negate to put "more is better" metrics on top.
 export interface Ranking {
   key: string;
   label: string;
