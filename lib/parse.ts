@@ -3,6 +3,7 @@ import { complete } from "./llm";
 import { fallbackParse, tryRuleParse, type ParsedScreen } from "./fallback-parse";
 import { applyRefinement, validRanking, type RefinementAction } from "./filter-ops";
 import { coerceActions, coerceFilters, enforceRefinementIntent, extractJsonObject } from "./parse-contract";
+import { ensureIntentCoverage } from "./intent-coverage";
 import { normalizeScreenQuery } from "./query-normalize";
 
 export interface ParseResult extends ParsedScreen {
@@ -20,6 +21,10 @@ function vocab() {
 
 function rankVocab() {
   return Object.values(RANKINGS).map((r) => `${r.key} (${r.label})`).join("; ");
+}
+
+function coverageFields(filters: Filter[], actions: RefinementAction[] | undefined, isRefine: boolean): string[] {
+  return isRefine ? (actions ?? []).map((action) => action.field) : filters.map((filter) => filter.field);
 }
 
 function buildNewSystem(): string {
@@ -75,9 +80,14 @@ export async function parseQuery(
   // explicit negations and a small set of transparent fuzzy translations.
   const rules = tryRuleParse(normalized.query, isRefine ? prev : [], currentRanking, resolvedMode);
   if (rules) {
+    const assumptions = ensureIntentCoverage(
+      query,
+      coverageFields(rules.filters, rules.actions, isRefine),
+      [...rules.assumptions, ...normalized.assumptions]
+    );
     return {
       ...rules,
-      assumptions: [...rules.assumptions, ...normalized.assumptions],
+      assumptions,
       source: "rules",
     };
   }
@@ -89,10 +99,12 @@ export async function parseQuery(
     if (isRefine) {
       const actions = enforceRefinementIntent(query, coerceActions(parsed.actions));
       const nextRanking = validRanking(parsed.ranking) ?? currentRanking;
-      const assumptions = Array.isArray(parsed.assumptions) ? parsed.assumptions.filter((a: any) => typeof a === "string") : [];
-      if (!actions.length && nextRanking === currentRanking && assumptions.length === 0) throw new Error("no valid refinement actions");
+      const rawAssumptions = Array.isArray(parsed.assumptions) ? parsed.assumptions.filter((a: any) => typeof a === "string") : [];
+      if (!actions.length && nextRanking === currentRanking && rawAssumptions.length === 0) throw new Error("no valid refinement actions");
+      const filters = applyRefinement(prev, actions, "ai");
+      const assumptions = ensureIntentCoverage(query, coverageFields(filters, actions, true), rawAssumptions);
       return {
-        filters: applyRefinement(prev, actions, "ai"),
+        filters,
         ranking: nextRanking,
         interpretation: typeof parsed.interpretation === "string" ? parsed.interpretation : "Updated the screen.",
         assumptions,
@@ -103,8 +115,9 @@ export async function parseQuery(
 
     const filters = coerceFilters(parsed.filters);
     const parsedRanking = validRanking(parsed.ranking);
-    const assumptions = Array.isArray(parsed.assumptions) ? parsed.assumptions.filter((a: any) => typeof a === "string") : [];
-    if (!filters.length && !parsedRanking && assumptions.length === 0) throw new Error("no valid screen output");
+    const rawAssumptions = Array.isArray(parsed.assumptions) ? parsed.assumptions.filter((a: any) => typeof a === "string") : [];
+    if (!filters.length && !parsedRanking && rawAssumptions.length === 0) throw new Error("no valid screen output");
+    const assumptions = ensureIntentCoverage(query, coverageFields(filters, undefined, false), rawAssumptions);
     return {
       filters,
       ranking: parsedRanking ?? "marketCap",
@@ -114,7 +127,11 @@ export async function parseQuery(
     };
   } catch {
     const fallback = fallbackParse(normalized.query, isRefine ? prev : [], [], currentRanking, isRefine);
-    fallback.assumptions = [...fallback.assumptions, ...normalized.assumptions];
+    fallback.assumptions = ensureIntentCoverage(
+      query,
+      coverageFields(fallback.filters, fallback.actions, isRefine),
+      [...fallback.assumptions, ...normalized.assumptions]
+    );
     if (fallback.assumptions.length === 0) fallback.assumptions = ["That request includes language Parse could not confidently map to a supported criterion."];
     if (!fallback.actions?.length && isRefine) fallback.interpretation = "No supported screen change was found.";
     else if (!fallback.filters.length) fallback.interpretation = "No supported filter was found.";
