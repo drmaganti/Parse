@@ -17,10 +17,15 @@ jobs:
           ref: agent/results-columns
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - run: python scripts/patch-results-columns.py
       - run: npm ci
-      - run: npm run build
+      - name: Build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: dummy-anon-key-for-build-validation
+          SUPABASE_SERVICE_ROLE_KEY: dummy-service-key-for-build-validation
+        run: npm run build
       - name: Commit product change
         run: |
           git config user.name "github-actions[bot]"
