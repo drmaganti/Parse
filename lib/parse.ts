@@ -37,7 +37,8 @@ function buildNewSystem(): string {
     "A range is represented as two filters on the same field. Example: P/E between 10 and 20 => pe>=10 and pe<=20.",
     "For exclusions such as 'exclude Energy', use sector != Energy.",
     "Do not add unrelated filters just because they are common in investing.",
-    "Do not invent numeric thresholds for qualitative words such as quality, low debt, high ROIC, dividend stock, or reasonable valuation unless a documented filter definition is explicitly supplied in the request.",
+    "Do not invent numeric thresholds for qualitative words unless they have already been expanded into an explicit documented Parse default in the normalized request.",
+    "When the normalized request contains an explicit Parse-default threshold, treat it like any other explicit criterion and preserve it exactly.",
     "If the request asks for an unsupported metric, do not substitute another metric. Omit the unsupported criterion and record it in assumptions. If nothing supported remains, return an empty filters array.",
     `Ranking must be exactly one of: ${rankVocab()}.`,
     "Ranking-only requests may return an empty filters array.",
@@ -63,6 +64,7 @@ function buildRefineSystem(previous: Filter[], currentRanking: string): string {
     "Ranges are two add actions on the same field unless the user explicitly replaces that field.",
     "Exclusions such as 'exclude Energy' use an add action with sector != Energy; exclusion is not a remove action.",
     "Multiple included sectors use one sector in action, not multiple sector == actions.",
+    "When the normalized instruction contains an explicit Parse-default threshold, treat it like an explicit user-facing criterion and preserve it exactly.",
     "If the instruction asks for an unsupported metric, return no action for that criterion and record it in assumptions. Never substitute a supported metric.",
     `If ranking changes, ranking must be one of: ${rankVocab()}; otherwise return null.`,
     'Respond ONLY with minified JSON: {"actions":[{"type":"add","field":"revGrowth","op":">","value":10}],"ranking":null,"interpretation":"one short sentence","assumptions":[]}',
@@ -95,16 +97,17 @@ export async function parseQuery(
   }
 
   try {
-    const rawText = await complete({ system: isRefine ? buildRefineSystem(prev, currentRanking) : buildNewSystem(), user: query });
+    const rawText = await complete({ system: isRefine ? buildRefineSystem(prev, currentRanking) : buildNewSystem(), user: normalized.query });
     const parsed = extractJsonObject(rawText);
 
     if (isRefine) {
       const actions = enforceRefinementIntent(query, coerceActions(parsed.actions));
       const nextRanking = validRanking(parsed.ranking) ?? currentRanking;
       const rawAssumptions = Array.isArray(parsed.assumptions) ? parsed.assumptions.filter((a: any) => typeof a === "string") : [];
-      if (!actions.length && nextRanking === currentRanking && rawAssumptions.length === 0) throw new Error("no valid refinement actions");
+      const mergedAssumptions = [...rawAssumptions, ...normalized.assumptions];
+      if (!actions.length && nextRanking === currentRanking && mergedAssumptions.length === 0) throw new Error("no valid refinement actions");
       const filters = applyRefinement(prev, actions, "ai");
-      const assumptions = ensureIntentCoverage(query, coverageFields(filters, actions, true), rawAssumptions);
+      const assumptions = ensureIntentCoverage(query, coverageFields(filters, actions, true), mergedAssumptions);
       return {
         filters,
         ranking: nextRanking,
@@ -118,8 +121,9 @@ export async function parseQuery(
     const filters = coerceFilters(parsed.filters);
     const parsedRanking = validRanking(parsed.ranking);
     const rawAssumptions = Array.isArray(parsed.assumptions) ? parsed.assumptions.filter((a: any) => typeof a === "string") : [];
-    if (!filters.length && !parsedRanking && rawAssumptions.length === 0) throw new Error("no valid screen output");
-    const assumptions = ensureIntentCoverage(query, coverageFields(filters, undefined, false), rawAssumptions);
+    const mergedAssumptions = [...rawAssumptions, ...normalized.assumptions];
+    if (!filters.length && !parsedRanking && mergedAssumptions.length === 0) throw new Error("no valid screen output");
+    const assumptions = ensureIntentCoverage(query, coverageFields(filters, undefined, false), mergedAssumptions);
     return {
       filters,
       ranking: parsedRanking ?? "marketCap",
