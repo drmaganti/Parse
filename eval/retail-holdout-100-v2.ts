@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseQuery } from "../lib/parse";
 
+// Blind holdout runner: corpus was frozen before parser-specific evaluation.
 type Case = { id: string; query: string };
 type Dataset = { cases: Case[] };
 
