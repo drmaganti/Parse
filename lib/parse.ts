@@ -28,6 +28,17 @@ function coverageFields(filters: Filter[], actions: RefinementAction[] | undefin
   return isRefine ? (actions ?? []).map((action) => action.field) : filters.map((filter) => filter.field);
 }
 
+function protectQualitativeMetrics(original: string, normalized: ReturnType<typeof normalizeScreenQuery>) {
+  const cmp = "no more than|no less than|at most|less than|lower than|under|below|<=|<|at least|more than|greater than|over|above|>=|>";
+  const explicitLowBeta = new RegExp(`\\blow\\s+beta\\s*(?:is\\s*)?(?:${cmp})\\s*-?\\d+(?:\\.\\d+)?`, "i").test(original);
+  if (/\blow beta\b/i.test(original) && !explicitLowBeta) {
+    normalized.query = normalized.query.replace(/\blow beta\b/gi, "risk preference");
+    const warning = "'Low beta' needs an explicit beta threshold; Parse left that criterion out rather than guess.";
+    if (!normalized.assumptions.includes(warning)) normalized.assumptions.push(warning);
+  }
+  return normalized;
+}
+
 async function finalizeResult(query: string, result: ParseResult, isRefine: boolean): Promise<ParseResult> {
   const knownAssumptions = ensureIntentCoverage(
     query,
@@ -106,7 +117,7 @@ export async function parseQuery(
 ): Promise<ParseResult> {
   const isRefine = mode ? mode === "refine" : prev.length > 0;
   const resolvedMode: ParseMode = isRefine ? "refine" : "new";
-  const normalized = normalizeScreenQuery(query);
+  const normalized = protectQualitativeMetrics(query, normalizeScreenQuery(query));
 
   const rules = tryRuleParse(normalized.query, isRefine ? prev : [], currentRanking, resolvedMode);
   if (rules) {
