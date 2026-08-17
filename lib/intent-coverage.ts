@@ -36,6 +36,18 @@ const INTENT_COVERAGE: IntentCoverageSpec[] = [
     assumptionMentions: /cash-rich|cash rich|lots of cash|cash balance/i,
     message: "Cash-balance screening is not supported yet, so that criterion was left out.",
   },
+  {
+    query: /\b(?:high|strong|excellent|healthy)\s+roic\b/i,
+    coveredBy: ["roic"],
+    assumptionMentions: /high roic|strong roic|excellent roic|healthy roic|roic threshold/i,
+    message: "'High ROIC' needs an explicit ROIC threshold; Parse left that criterion out rather than guess.",
+  },
+  {
+    query: /\b(?:strong|high|healthy)\s+(?:profit\s+)?margins?\b/i,
+    coveredBy: ["operatingMargin", "fcfMargin"],
+    assumptionMentions: /strong margins|high margins|healthy margins|margin threshold/i,
+    message: "'Strong margins' needs an operating-margin or FCF-margin threshold; Parse left that criterion out rather than guess.",
+  },
 ];
 
 export function ensureIntentCoverage(query: string, coveredFields: string[], assumptions: string[]): string[] {
