@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run eval:holdout100 && next build",
     "start": "next start",
     "ingest": "tsx scripts/ingest.ts",
     "ingest:investors": "tsx scripts/ingest-investor-holdings.ts",
@@ -12,6 +12,7 @@
     "test:composite-regressions": "tsx eval/composite-regressions.ts",
     "eval:composite100": "tsx eval/composite-100.ts",
     "eval:retail100": "tsx eval/retail-investor-100.ts",
+    "eval:holdout100": "tsx eval/retail-holdout-100-v2.ts",
     "eval": "tsx eval/run.ts",
     "eval:model": "MODEL_RUNS=2 MODEL_MIN_PASS_RATE=0.95 tsx eval/run.ts",
     "eval:live": "MODEL_MIN_PASS_RATE=0.95 tsx eval/live.ts",
