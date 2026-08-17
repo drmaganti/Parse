@@ -10,6 +10,7 @@
     "ingest:investors": "tsx scripts/ingest-investor-holdings.ts",
     "test:parser-contract": "tsx eval/contract.ts",
     "test:composite-regressions": "tsx eval/composite-regressions.ts",
+    "test:investor-language": "tsx eval/investor-language-regressions.ts",
     "eval:composite100": "tsx eval/composite-100.ts",
     "eval:retail100": "tsx eval/retail-investor-100.ts",
     "eval:holdout100": "tsx eval/retail-holdout-100-v2.ts",
