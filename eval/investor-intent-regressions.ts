@@ -12,9 +12,9 @@ const cases = [
     mustInclude: [/Quality.*investment style/i, /High ROIC/i, /Strong margins/i, /Low debt\/leverage/i, /Reasonable valuation/i],
   },
   {
-    name: "high quality growth style surfaces both styles",
+    name: "high quality growth style uses disclosed growth default",
     query: "Find high-quality growth stocks with strong margins, high ROIC, and not-crazy valuations.",
-    mustInclude: [/Quality.*investment style/i, /Growth.*investment style/i, /Strong margins/i, /High ROIC/i, /Reasonable valuation/i],
+    mustInclude: [/quality metric|standalone quality/i, /growth stock.*15%.*Parse.*default/i, /Strong margins/i, /High ROIC/i, /Reasonable valuation/i],
   },
   {
     name: "explicit 5Y dividend growth suppresses redundant dividend-grower warning",
