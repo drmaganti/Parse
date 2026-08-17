@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run test:investor-language && npm run test:p0-parser && npm run eval:composite100 && npm run eval:retail100 && npm run eval:holdout100 && next build",
     "start": "next start",
     "ingest": "tsx scripts/ingest.ts",
     "ingest:investors": "tsx scripts/ingest-investor-holdings.ts",
