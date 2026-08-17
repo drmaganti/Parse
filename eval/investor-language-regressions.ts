@@ -42,28 +42,32 @@ const cases: Case[] = [
   { name: "metric local ranges do not steal", query: "Revenue growth between 10% and 25%, operating margin above 12%, and beta below 1.2", expected: [{ field: "revGrowth", op: ">=", value: 10 }, { field: "revGrowth", op: "<=", value: 25 }, { field: "operatingMargin", op: ">", value: 12 }, { field: "beta", op: "<", value: 1.2 }] },
 ];
 
-let failures = 0;
-for (const c of cases) {
-  const result = await parseQuery(c.query, [], [], "marketCap", "new");
-  const actual = new Set(result.filters.map(key));
-  const missing = (c.expected ?? []).filter((f) => !actual.has(key(f)));
-  const absentViolation = (c.absentFields ?? []).filter((field) => result.filters.some((f) => f.field === field));
-  const assumptionOk = !c.assumption || c.assumption.test(result.assumptions.join(" "));
-  if (missing.length || absentViolation.length || !assumptionOk) {
-    failures++;
-    console.log(`FAIL ${c.name}`);
-    if (missing.length) console.log(`  missing: ${missing.map(key).join(", ")}`);
-    if (absentViolation.length) console.log(`  unexpectedly present: ${absentViolation.join(", ")}`);
-    if (!assumptionOk) console.log(`  missing assumption: ${c.assumption}`);
-    console.log(`  actual: ${result.filters.map(key).join(", ") || "(none)"}`);
-    console.log(`  assumptions: ${result.assumptions.join(" | ") || "(none)"}`);
-  } else {
-    console.log(`PASS ${c.name}`);
+async function run() {
+  let failures = 0;
+  for (const c of cases) {
+    const result = await parseQuery(c.query, [], [], "marketCap", "new");
+    const actual = new Set(result.filters.map(key));
+    const missing = (c.expected ?? []).filter((f) => !actual.has(key(f)));
+    const absentViolation = (c.absentFields ?? []).filter((field) => result.filters.some((f) => f.field === field));
+    const assumptionOk = !c.assumption || c.assumption.test(result.assumptions.join(" "));
+    if (missing.length || absentViolation.length || !assumptionOk) {
+      failures++;
+      console.log(`FAIL ${c.name}`);
+      if (missing.length) console.log(`  missing: ${missing.map(key).join(", ")}`);
+      if (absentViolation.length) console.log(`  unexpectedly present: ${absentViolation.join(", ")}`);
+      if (!assumptionOk) console.log(`  missing assumption: ${c.assumption}`);
+      console.log(`  actual: ${result.filters.map(key).join(", ") || "(none)"}`);
+      console.log(`  assumptions: ${result.assumptions.join(" | ") || "(none)"}`);
+    } else {
+      console.log(`PASS ${c.name}`);
+    }
   }
+
+  if (failures) {
+    console.error(`${failures}/${cases.length} investor-language regressions failed`);
+    process.exit(1);
+  }
+  console.log(`${cases.length}/${cases.length} investor-language regressions passed`);
 }
 
-if (failures) {
-  console.error(`${failures}/${cases.length} investor-language regressions failed`);
-  process.exit(1);
-}
-console.log(`${cases.length}/${cases.length} investor-language regressions passed`);
+run().catch((err) => { console.error(err); process.exit(1); });
