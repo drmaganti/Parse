@@ -31,6 +31,21 @@ async function parserCase(
   if (requireAssumption) check(`${query} exposes assumption`, result.assumptions.length > 0, JSON.stringify(result.assumptions));
 }
 
+async function intentCoverageCase(
+  query: string,
+  expected: ExpectedFilter[],
+  assumptionNeedles: string[]
+) {
+  const result = await parseQuery(query, [], [], "marketCap", "new");
+  check(`${query} uses deterministic rules`, result.source === "rules", `source=${result.source}`);
+  for (const f of expected) check(`${query} → ${f.field}${f.op}${f.value}`, hasFilter(result.filters, f), JSON.stringify(result.filters));
+  check(`${query} has no unexpected filters`, result.filters.length === expected.length, JSON.stringify(result.filters));
+  const assumptions = result.assumptions.join(" ").toLowerCase();
+  for (const needle of assumptionNeedles) {
+    check(`${query} surfaces unmapped '${needle}' intent`, assumptions.includes(needle.toLowerCase()), JSON.stringify(result.assumptions));
+  }
+}
+
 async function run() {
   await parserCase(
     "Large companies that are not tech but are cheap. Not dead cheap though.",
@@ -72,6 +87,33 @@ async function run() {
     "value",
     true
   );
+
+  await intentCoverageCase(
+    "profitable tech companies growing revenue over 20% with low debt and a reasonable valuation",
+    [
+      { field: "revGrowth", op: ">", value: 20 },
+      { field: "sector", op: "==", value: "Technology" },
+    ],
+    ["profitable", "low debt", "reasonable valuation"]
+  );
+
+  const explicit = await parseQuery(
+    "Technology companies with operating margin above 0%, revenue growth over 20%, debt/equity below 1, and P/E below 25",
+    [],
+    [],
+    "marketCap",
+    "new"
+  );
+  const explicitFilters: ExpectedFilter[] = [
+    { field: "operatingMargin", op: ">", value: 0 },
+    { field: "revGrowth", op: ">", value: 20 },
+    { field: "debtEquity", op: "<", value: 1 },
+    { field: "pe", op: "<", value: 25 },
+    { field: "sector", op: "==", value: "Technology" },
+  ];
+  for (const f of explicitFilters) check(`explicit thresholds → ${f.field}${f.op}${f.value}`, hasFilter(explicit.filters, f), JSON.stringify(explicit.filters));
+  check("explicit thresholds have no unexpected filters", explicit.filters.length === explicitFilters.length, JSON.stringify(explicit.filters));
+  check("explicit thresholds do not trigger unmapped-intent warnings", !explicit.assumptions.some((a) => /left out rather than guess|criterion was left out/i.test(a)), JSON.stringify(explicit.assumptions));
 
   const sectors: Array<[string, string | null]> = [
     ["Biotechnology", "Healthcare"],
