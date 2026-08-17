@@ -25,7 +25,7 @@ Against production `main` at `72d02a7`, the independent holdout scored:
 - **Partial: 0/100**
 - **Fail: 0/100**
 
-All 28 originally non-strong cases were re-reviewed after the generalized fixes. The final four transparency edge cases found during that re-review (`EPS double digits` without a horizon, `quality tech stocks`, redundant dividend-grower warning when a 5Y growth metric is explicit, and postpositive `leverage is low`) were added as dedicated permanent regression tests rather than addressed only in this corpus.
+All 28 originally non-strong cases were re-reviewed after the generalized fixes. The final re-review found four transparency edge cases (`EPS double digits` without a horizon, `quality tech stocks`, redundant dividend-grower warning when a 5Y growth metric is explicit, and postpositive `leverage is low`). Those were added as separate permanent regression cases and all pass on the final branch head; the holdout query text itself was not edited.
 
 ## What changed
 
@@ -83,7 +83,7 @@ The current feed does not provide reliable end-to-end data for these requested c
 
 ## Regression status
 
-Latest PR CI on the final branch head passes:
+Latest PR CI on the final branch passes:
 
 - Investor-language regressions: **32/32**
 - No-guess intent regressions: **5/5**
