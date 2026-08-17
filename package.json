@@ -11,6 +11,7 @@
     "test:parser-contract": "tsx eval/contract.ts",
     "test:composite-regressions": "tsx eval/composite-regressions.ts",
     "test:investor-language": "tsx eval/investor-language-regressions.ts && tsx eval/investor-intent-regressions.ts",
+    "eval:moneyflock50": "tsx eval/moneyflock-style-50.ts",
     "eval:composite100": "tsx eval/composite-100.ts",
     "eval:retail100": "tsx eval/retail-investor-100.ts",
     "eval:holdout100": "tsx eval/retail-holdout-100-v2.ts",
@@ -19,7 +20,7 @@
     "eval:live": "MODEL_MIN_PASS_RATE=0.95 tsx eval/live.ts",
     "eval:offline": "OFFLINE=1 tsx eval/run.ts",
     "test:p0-parser": "npm run test:parser-contract && npm run test:composite-regressions && npm run eval:offline",
-    "test:retail-full": "npm run test:investor-language && npm run test:p0-parser && npm run eval:composite100 && npm run eval:retail100 && npm run eval:holdout100"
+    "test:retail-full": "npm run test:investor-language && npm run eval:moneyflock50 && npm run test:p0-parser && npm run eval:composite100 && npm run eval:retail100 && npm run eval:holdout100"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
