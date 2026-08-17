@@ -1,15 +1,16 @@
 import { FIELDS, RANKINGS, type Filter, type StockRow } from "./fields";
 
+function sectorSet(value: number | string): string[] {
+  return String(value).split("|").map((v) => v.trim().toLowerCase()).filter(Boolean);
+}
+
 function passes(stock: StockRow, f: Filter): boolean {
   const meta = FIELDS[f.field];
   if (!meta) return true;
 
   if (meta.kind === "cat") {
     const actual = String((stock as any)[meta.col] ?? "").toLowerCase();
-    if (f.op === "in") {
-      if (!Array.isArray(f.value)) return false;
-      return f.value.some((value) => String(value).toLowerCase() === actual);
-    }
+    if (f.op === "in") return sectorSet(f.value).includes(actual);
     const expected = String(f.value).toLowerCase();
     if (f.op === "!=") return actual !== expected;
     return actual === expected;
