@@ -17,9 +17,9 @@ export interface ParsedScreen {
 }
 
 let counter = 0;
-const mk = (field: string, op: Op, value: FilterValue): Filter => ({
+const mk = (field: string, op: Op, value: FilterValue | string[]): Filter => ({
   id: `${field}_${op}_${counter++}`,
-  field, op, value, source: "ai",
+  field, op, value: Array.isArray(value) ? value.join("|") : value, source: "ai",
 });
 
 function addUnique(out: Filter[], f: Filter) {
@@ -163,8 +163,6 @@ function parseFresh(query: string): ParsedScreen {
     ranking = "value";
   }
 
-  // Dividend/income words may choose a ranking, but never create an undisclosed
-  // yield threshold. Numeric dividend-yield filters require explicit yield language.
   const qualitativeDividend = /\bdividend\b|\bincome\b|\bpayout\b|high[- ]?yield|highest yield/.test(genericQ);
   if (qualitativeDividend || hasMetricSpan(spans, "divYield")) ranking = "dividend";
 
