@@ -11,7 +11,7 @@ function nextId(field: string, op: Op, source: Filter["source"]) {
 }
 
 function valueKey(value: FilterValue): string {
-  if (Array.isArray(value)) return [...value].map((v) => String(v).toLowerCase()).sort().join("|");
+  if (typeof value === "string" && value.includes("|")) return value.split("|").map((v) => v.trim().toLowerCase()).sort().join("|");
   return String(value).toLowerCase();
 }
 
@@ -41,9 +41,6 @@ export function applyRefinement(previous: Filter[], actions: RefinementAction[],
       continue;
     }
 
-    // A replacement can contain multiple bounds for the same metric. Clear the
-    // previous metric only once, then treat subsequent replacement actions for
-    // that field as additions to the new definition.
     if (action.type === "replace" && !replacedFields.has(action.field)) {
       next = next.filter((f) => f.field !== action.field);
       replacedFields.add(action.field);
@@ -86,8 +83,8 @@ export function findFilterConflict(filters: Filter[]): string | null {
       for (const f of group) {
         if (f.op === "==") {
           allowed = intersectAllowed(allowed, new Set([String(f.value).toLowerCase()]));
-        } else if (f.op === "in" && Array.isArray(f.value)) {
-          allowed = intersectAllowed(allowed, new Set(f.value.map((v) => String(v).toLowerCase())));
+        } else if (f.op === "in") {
+          allowed = intersectAllowed(allowed, new Set(String(f.value).split("|").map((v) => v.trim().toLowerCase()).filter(Boolean)));
         } else if (f.op === "!=") {
           excluded.add(String(f.value).toLowerCase());
         }
