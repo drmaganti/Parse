@@ -82,11 +82,11 @@ export function normalizeScreenQuery(input: string): NormalizedQuery {
   );
 
   query = query.replace(
-    new RegExp(`\\b(?:trading|trade)?\\s*(${CMP})\\s*(${NUM})\\s*x\\s*earnings\\b`, "gi"),
+    new RegExp(`(?:\\b(?:trading|trade)\\s+)?\\b(${CMP})\\s*(${NUM})\\s*x\\s*earnings\\b`, "gi"),
     (_m, cmp: string, amount: string) => `P/E ${cmp} ${amount}`
   );
   query = query.replace(
-    new RegExp(`\\b(?:trading|trade)?\\s*(${CMP})\\s*(${NUM})\\s*x\\s*(?:book(?:\\s+value)?)\\b`, "gi"),
+    new RegExp(`(?:\\b(?:trading|trade)\\s+)?\\b(${CMP})\\s*(${NUM})\\s*x\\s*book(?:\\s+value)?\\b`, "gi"),
     (_m, cmp: string, amount: string) => `P/B ${cmp} ${amount}`
   );
 
@@ -116,8 +116,6 @@ export function normalizeScreenQuery(input: string): NormalizedQuery {
     (_m, cmp: string, amount: string) => `dividend yield ${cmp} ${amount}%`
   );
 
-  // Keep style labels visible to intent coverage, but prevent the deterministic
-  // parser's legacy generic-growth shortcut from manufacturing a 15% threshold.
   query = query.replace(/\bgrowth\s+(stocks|companies|names)\b/gi, "growth-style $1");
 
   query = query.replace(/\bgrowing\s+both\s+revenue\s+and\s+(?:eps|earnings)\s+double[- ]digits?\b/gi, "revenue growth at least 10% and EPS growth double digits");
