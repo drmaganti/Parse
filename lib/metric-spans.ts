@@ -19,15 +19,15 @@ export const FUNDAMENTAL_TERMS: [string, string][] = [
 
 type SpanSpec = { field: string; source: string };
 
-// Order matters: specific/compound metrics claim their text before broader metrics.
-// This prevents words such as "value", "yield", and "revenue growth" inside a
-// recognized metric from being reinterpreted by another metric or qualitative rule.
+// Order matters: compound metrics claim their text before broader metrics.
+// Bare words such as "yield" stay unowned so qualitative phrases like
+// "high yield" still work, while "FCF yield" and "dividend yield" are owned.
 const SPAN_SPECS: SpanSpec[] = [
   ...FUNDAMENTAL_TERMS.map(([field, source]) => ({ field, source })),
   { field: "pe", source: "(?:\\bp\\/?e\\b|price.?to.?earnings)" },
   { field: "pb", source: "(?:\\bp\\/?b\\b|price.?to.?book)" },
   { field: "ps", source: "(?:\\bp\\/?s\\b|price.?to.?sales)" },
-  { field: "divYield", source: "(?:dividend yield|\\byield(?:ing)?\\b)" },
+  { field: "divYield", source: "dividend yield" },
   { field: "beta", source: "\\bbeta\\b" },
   { field: "marketCap", source: "market\\s*cap" },
   { field: "revGrowth", source: "(?:revenue growth|growing revenue|grow(?:ing)? revenue)" },
@@ -65,8 +65,7 @@ function maskSpans(text: string, spans: MetricSpan[]): string {
 }
 
 // Keeps the requested metric's phrases visible while masking phrases owned by
-// every other metric. Numeric/operator text is intentionally preserved so the
-// target metric can still bind to its nearby condition.
+// every other metric. Operators and numeric text remain available for binding.
 export function textForMetric(text: string, spans: MetricSpan[], field: string): string {
   return maskSpans(text, spans.filter((span) => span.field !== field));
 }
