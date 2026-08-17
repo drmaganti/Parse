@@ -6,22 +6,29 @@ export interface MetricSpan {
 }
 
 export const FUNDAMENTAL_TERMS: [string, string][] = [
+  ["forwardPe", "(?:forward\\s+(?:p\\/?e|price[- ]?to[- ]?earnings))"],
+  ["forwardPeg", "(?:forward\\s+peg|\\bpeg\\b|price.?earnings.?to.?growth)"],
+  ["earningsYield", "(?:earnings yield)"],
+  ["divGrowth5Y", "(?:(?:5[- ]?year|5y) dividend (?:growth|cagr)|dividend (?:growth|cagr) (?:over )?(?:5[- ]?years|5y))"],
+  ["payoutRatio", "(?:payout ratio|dividend payout ratio)"],
   ["revGrowth3Y", "(?:3[- ]?year revenue growth|3y revenue growth|revenue growth (?:over )?(?:3[- ]?years|3y)|3[- ]?year revenue cagr|3y revenue cagr)"],
   ["epsGrowth3Y", "(?:3[- ]?year (?:eps|earnings) growth|3y (?:eps|earnings) growth|(?:eps|earnings) growth (?:over )?(?:3[- ]?years|3y)|3[- ]?year (?:eps|earnings) cagr|3y (?:eps|earnings) cagr)"],
   ["roic", "(?:\\broic\\b|return on invested capital)"],
+  ["roe", "(?:\\broe\\b|return on equity)"],
+  ["grossMargin", "(?:gross margin|gross profit margin)"],
   ["operatingMargin", "(?:operating margin|operating profit margin)"],
   ["fcfMargin", "(?:free cash flow margin|\\bfcf margin\\b)"],
   ["fcfYield", "(?:free cash flow yield|\\bfcf yield\\b)"],
   ["debtEquity", "(?:debt\\s*(?:to|/)\\s*equity|debt[- ]?equity ratio)"],
   ["interestCoverage", "(?:interest coverage|interest cover)"],
+  ["currentRatio", "(?:current ratio)"],
+  ["quickRatio", "(?:quick ratio|acid[- ]test ratio)"],
   ["evEbitda", "(?:ev\\s*(?:to|/)\\s*ebitda|enterprise value\\s*(?:to|/)\\s*ebitda)"],
 ];
 
 type SpanSpec = { field: string; source: string };
 
 // Order matters: compound metrics claim their text before broader metrics.
-// Bare words such as "yield" stay unowned so qualitative phrases like
-// "high yield" still work, while "FCF yield" and "dividend yield" are owned.
 const SPAN_SPECS: SpanSpec[] = [
   ...FUNDAMENTAL_TERMS.map(([field, source]) => ({ field, source })),
   { field: "pe", source: "(?:\\bp\\/?e\\b|price.?to.?earnings)" },
@@ -64,13 +71,10 @@ function maskSpans(text: string, spans: MetricSpan[]): string {
   return chars.join("");
 }
 
-// Keeps the requested metric's phrases visible while masking phrases owned by
-// every other metric. Operators and numeric text remain available for binding.
 export function textForMetric(text: string, spans: MetricSpan[], field: string): string {
   return maskSpans(text, spans.filter((span) => span.field !== field));
 }
 
-// Generic investment-language rules only see text that no recognized metric owns.
 export function textForGenericIntent(text: string, spans: MetricSpan[]): string {
   return maskSpans(text, spans);
 }
