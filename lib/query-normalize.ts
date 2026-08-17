@@ -5,18 +5,19 @@ export interface NormalizedQuery {
 
 const SECTOR_ALIASES: Array<[RegExp, string]> = [
   [/\btech(?:nology)?\b/i, "Technology"],
-  [/\bfinancials?\b/i, "Financials"],
-  [/\bhealth\s*care\b|\bhealthcare\b/i, "Healthcare"],
+  [/\bsoftware\b|\bsemiconductors?\b/i, "Technology"],
+  [/\bfinancials?\b|\bbanks?\b|\bbanking\b/i, "Financials"],
+  [/\bhealth\s*care\b|\bhealthcare\b|\bbiotech(?:nology)?\b|\bpharma\b|\bpharmaceuticals?\b/i, "Healthcare"],
   [/\bconsumer\b/i, "Consumer"],
   [/\benergy\b/i, "Energy"],
   [/\bindustrials?\b/i, "Industrials"],
   [/\bcommunications?\b/i, "Communications"],
-  [/\butilities\b/i, "Utilities"],
+  [/\butilities?\b/i, "Utilities"],
   [/\bmaterials?\b/i, "Materials"],
   [/\breal estate\b|\breits?\b/i, "Real Estate"],
 ];
 
-const CMP = "no more than|at most|less than|lower than|under|below|maximum|max|<=|<|at least|minimum|min|more than|greater than|over|above|>=|>";
+const CMP = "no more than|no less than|at most|less than|lower than|under|below|maximum|max|<=|<|at least|minimum|min|more than|greater than|over|above|>=|>";
 const NUM = "-?\\d+(?:\\.\\d+)?";
 
 function pushAssumption(out: string[], message: string) {
@@ -49,13 +50,25 @@ export function normalizeScreenQuery(input: string): NormalizedQuery {
   let query = input;
   const assumptions: string[] = [];
 
+  // Resolve long-form comparators before shorter tokens can steal them.
+  query = query
+    .replace(/\bno\s+less\s+than\b/gi, "at least")
+    .replace(/\bnot\s+below\b/gi, "at least")
+    .replace(/\bnot\s+under\b/gi, "at least")
+    .replace(/\bno\s+more\s+than\b/gi, "at most")
+    .replace(/\bnot\s+above\b/gi, "at most")
+    .replace(/\bnorth\s+of\b/gi, "above");
+
   for (const [alias, canonical] of SECTOR_ALIASES) {
     const source = alias.source.replace(/^\\b|\\b$/g, "");
-    const nounRx = new RegExp(`\\b(?:not|non[- ]?)\\s*(?:${source})\\s+(companies|stocks|names)\\b`, "ig");
+    const nounRx = new RegExp(`\\b(?:not|non[- ]?)\\s*(?:${source})\\s+(companies|stocks|names|firms)\\b`, "ig");
     if (nounRx.test(query)) query = query.replace(nounRx, `$1 excluding ${canonical}`);
 
     const notRx = new RegExp(`\\b(?:not|non[- ]?)\\s*(?:${source})\\b`, "ig");
     if (notRx.test(query)) query = query.replace(notRx, `exclude ${canonical}`);
+
+    const positiveNounRx = new RegExp(`\\b(?:${source})\\s+(companies|stocks|names|firms)\\b`, "ig");
+    if (positiveNounRx.test(query)) query = query.replace(positiveNounRx, `${canonical} $1`);
   }
 
   query = query.replace(/\breits?\b/gi, "Real Estate");
@@ -68,13 +81,19 @@ export function normalizeScreenQuery(input: string): NormalizedQuery {
     .replace(/\bd\s*\/\s*e\b/gi, "debt/equity")
     .replace(/\b3(?:y|[- ]?yr|[- ]?year)\s+(?:rev(?:enue)?|sales)\s+cagr\b/gi, "3-year revenue CAGR")
     .replace(/\b3(?:y|[- ]?yr|[- ]?year)\s+sales\s+growth\b/gi, "3-year revenue growth")
+    .replace(/\btop[- ]line\s+growth\b/gi, "revenue growth")
     .replace(/\bsales\s+growth\b/gi, "revenue growth")
+    .replace(/\bsales\s+(?:growing|expanding)(?=\s+(?:at least|at most|more than|greater than|less than|lower than|over|above|under|below|>=|<=|>|<))/gi, "revenue growth")
+    .replace(/\brevenue\s+(?:is\s+)?(?:growing|expanding)(?=\s+(?:at least|at most|more than|greater than|less than|lower than|over|above|under|below|>=|<=|>|<))/gi, "revenue growth")
     .replace(/\bgrowing\s+sales\b/gi, "growing revenue")
     .replace(/\bop(?:er)?\.?\s+margins?\b/gi, "operating margin")
     .replace(/\b(?:free cash flow|fcf)\s+margins\b/gi, "FCF margin")
     .replace(/\breturn on equity\b/gi, "ROE")
     .replace(/\bgross profit margin\b/gi, "gross margin")
     .replace(/\bacid[- ]test ratio\b/gi, "quick ratio");
+
+  query = query.replace(/\bgrowing\s+revenue\s+double[- ]digits?\b/gi, "revenue growth at least 10%");
+  query = query.replace(/\brevenue\s+(?:is\s+)?growing\s+double[- ]digits?\b/gi, "revenue growth at least 10%");
 
   query = query.replace(
     new RegExp(`\\b(?:eps|earnings)\\s+(?:growth|cagr)\\s*(${CMP})\\s*(${NUM})\\s*%?\\s*(?:over|for)\\s*3\\s*(?:years?|yrs?|y)\\b`, "gi"),
@@ -95,9 +114,19 @@ export function normalizeScreenQuery(input: string): NormalizedQuery {
     "free cash flow margin", "free cash flow yield", "beta", "rsi", "revenue growth", "interest coverage",
     "current ratio", "quick ratio", "payout ratio", "earnings yield", "forward p/e", "forward peg", "peg", "ev/ebitda",
   ].join("|");
+
+  // Symbol-first forms do not have a word boundary before the comparator, so handle them explicitly.
+  query = query.replace(
+    new RegExp(`([<>]=?)\\s*(${NUM})\\s*%?\\s*(${reorderMetric})\\b`, "gi"),
+    (_m, cmp: string, amount: string, metric: string) => `${metric} ${cmp} ${amount}`
+  );
   query = query.replace(
     new RegExp(`\\b(${CMP})\\s*(${NUM})\\s*(?:%|x)?\\s*(${reorderMetric})\\b`, "gi"),
     (_m, cmp: string, amount: string, metric: string) => `${metric} ${cmp} ${amount}`
+  );
+  query = query.replace(
+    new RegExp(`\\b(${reorderMetric})\\s*(${NUM})\\s*%\\s*\\+`, "gi"),
+    (_m, metric: string, amount: string) => `${metric} at least ${amount}%`
   );
 
   query = query.replace(/\blarge\s+(?=(?:[a-z-]+\s+){1,4}(?:stocks|names)\b)/gi, "large-cap ");
@@ -127,14 +156,14 @@ export function normalizeScreenQuery(input: string): NormalizedQuery {
     }
   }
 
-  const profitableIntent = /\bprofitable\b|\bpositive earnings\b(?!\s+growth)|\bpositive net income\b/i;
+  const profitableIntent = /\bprofitable\b|\bpositive earnings\b(?!\s+growth)|\bpositive net income\b|\bmaking money\b|\bin the black\b/i;
   const explicitProfitabilityMetric = /\b(?:operating|gross|fcf|free cash flow)\s+margin\b/i.test(query);
   if (profitableIntent.test(query) && !explicitProfitabilityMetric) {
     query = query.replace(profitableIntent, "operating margin above 0%");
     pushAssumption(assumptions, "Read 'profitable' as operating margin above 0% using Parse's profitability default. Operating margin is used as the supported profitability indicator and the threshold is editable.");
   }
 
-  const lowDebtIntent = /\blow debt\b|\blittle debt\b|\bminimal debt\b|\blow leverage\b|\blightly leveraged\b|\bleverage\s+(?:is|looks?)\s+low\b/i;
+  const lowDebtIntent = /\blow debt\b|\blittle debt\b|\bminimal debt\b|\blow leverage\b|\blightly leveraged\b|\bnot overleveraged\b|\bdebt\s+(?:is|looks?)\s+modest\b|\bconservative leverage\b|\bleverage\s+(?:is|looks?)\s+low\b/i;
   const explicitDebtMetric = /\bdebt\s*(?:to|\/)\s*equity\b/i.test(query);
   if (lowDebtIntent.test(query) && !explicitDebtMetric) {
     query = query.replace(lowDebtIntent, "debt/equity below 1");
@@ -148,7 +177,7 @@ export function normalizeScreenQuery(input: string): NormalizedQuery {
     pushAssumption(assumptions, "Read 'high ROIC' as ROIC above 15% using Parse's default. Edit the threshold if you mean something different.");
   }
 
-  const reasonableValuationIntent = /\breasonable valuation\b|\breasonably valued\b|\bfair valuation\b|\bfairly valued\b|\bsensible valuation\b|\bnot expensive\b|\bnot[- ]crazy valuation(?:s)?\b/i;
+  const reasonableValuationIntent = /\breasonable valuation\b|\breasonably valued\b|\bfair valuation\b|\bfairly valued\b|\bsensible valuation\b|\bvaluation\s+(?:is|looks?)\s+sensible\b|\bnot expensive\b|\bnot[- ]crazy valuation(?:s)?\b|\bvaluation\s+(?:is|looks?)n['’]?t\s+stretched\b|\bpriced reasonably\b|\bfair price\b/i;
   const explicitValuationMetric = /\b(?:forward\s+)?p\/?e\b|\bp\/?b\b|\bp\/?s\b|\bev\s*(?:to|\/)\s*ebitda\b|\b(?:forward\s+)?peg\b|\bearnings yield\b/i.test(query);
   if (reasonableValuationIntent.test(query) && !explicitValuationMetric) {
     query = query.replace(reasonableValuationIntent, "P/E below 25");
