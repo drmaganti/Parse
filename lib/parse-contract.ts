@@ -1,4 +1,4 @@
-import { FIELDS, OPS, SECTORS, type Filter, type Op } from "./fields";
+import { FIELDS, OPS, SECTORS, type Filter, type FilterValue, type Op } from "./fields";
 import { sameFilter, type RefinementAction } from "./filter-ops";
 
 const hasField = (field: unknown): field is string =>
@@ -18,14 +18,22 @@ export function coerceFilter(raw: any, source: Filter["source"] = "ai"): Filter 
   const meta = FIELDS[raw.field];
   if (!OPS.includes(raw?.op)) return null;
   const op = raw.op as Op;
-  if (meta.kind === "cat" && op !== "==" && op !== "!=") return null;
-  if (meta.kind === "num" && op === "!=") return null;
+  if (meta.kind === "cat" && op !== "==" && op !== "!=" && op !== "in") return null;
+  if (meta.kind === "num" && (op === "!=" || op === "in")) return null;
 
-  let value: number | string = raw?.value;
+  let value: FilterValue = raw?.value;
   if (meta.kind === "num") {
     const n = Number(value);
     if (!Number.isFinite(n)) return null;
     value = n;
+  } else if (op === "in") {
+    if (!Array.isArray(value) || value.length < 2) return null;
+    const canonical = value
+      .map((item) => SECTORS.find((s) => s.toLowerCase() === String(item).trim().toLowerCase()))
+      .filter((item): item is string => Boolean(item));
+    const unique = [...new Set(canonical)];
+    if (unique.length < 2) return null;
+    value = unique;
   } else {
     const hit = SECTORS.find((s) => s.toLowerCase() === String(value).trim().toLowerCase());
     if (!hit) return null;
@@ -54,7 +62,7 @@ export function coerceActions(rawActions: unknown): RefinementAction[] {
 
     if (raw.type === "remove") {
       if (raw.op !== undefined && !OPS.includes(raw.op)) continue;
-      if (raw.op === "!=" && FIELDS[raw.field].kind === "num") continue;
+      if ((raw.op === "!=" || raw.op === "in") && FIELDS[raw.field].kind === "num") continue;
       const action: RefinementAction = { type: "remove", field: raw.field };
       if (raw.op !== undefined) action.op = raw.op as Op;
       if (raw.value !== undefined) action.value = raw.value;
