@@ -5,7 +5,7 @@
 type Provider = "groq" | "google";
 
 const PROVIDER = (process.env.LLM_PROVIDER ?? "groq") as Provider;
-const GROQ_MODEL = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
+const GROQ_MODEL = process.env.GROQ_MODEL ?? "openai/gpt-oss-120b";
 const GOOGLE_MODEL = process.env.GOOGLE_MODEL ?? "gemini-2.0-flash";
 
 export interface Completion {
