@@ -32,3 +32,5 @@ jobs:
       - run: npm run eval:composite100
       - run: npm run eval:retail100
       - run: npm run build
+      - name: Run fresh MoneyFlock blind 50 v3
+        run: npx tsx eval/moneyflock-blind-50-v3.ts
