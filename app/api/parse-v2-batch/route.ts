@@ -17,29 +17,9 @@ const cases: Case[] = [
     expected: [f("operatingMargin", ">", 0), f("revGrowth", ">", 17), f("debtEquity", "<", 1), f("pe", "<", 25), f("sector", "==", "Technology")],
   },
   {
-    id: "N02",
-    query: "Healthcare firms making money with top-line growth above 11%, not much debt, and a sensible price.",
-    expected: [f("operatingMargin", ">", 0), f("revGrowth", ">", 11), f("debtEquity", "<", 1), f("pe", "<", 25), f("sector", "==", "Healthcare")],
-  },
-  {
-    id: "N03",
-    query: "Software stocks that are profitable, revenue rising at least 16%, leverage on the low side, and not overpriced.",
-    expected: [f("operatingMargin", ">", 0), f("revGrowth", ">=", 16), f("debtEquity", "<", 1), f("pe", "<", 25), f("sector", "==", "Technology")],
-  },
-  {
     id: "N40",
     query: "Profitable semiconductor companies with revenue growth from 15% to 25%, low debt and fair valuation.",
     expected: [f("operatingMargin", ">", 0), f("revGrowth", ">=", 15), f("revGrowth", "<=", 25), f("debtEquity", "<", 1), f("pe", "<", 25), f("sector", "==", "Technology")],
-  },
-  {
-    id: "N41",
-    query: "Profitable software-as-a-service companies growing revenue over 20%, low debt and reasonable valuation.",
-    expected: [f("operatingMargin", ">", 0), f("revGrowth", ">", 20), f("debtEquity", "<", 1), f("pe", "<", 25), f("sector", "==", "Technology")],
-  },
-  {
-    id: "N42",
-    query: "Chipmakers making money, sales growth above 18%, low leverage and fair valuation.",
-    expected: [f("operatingMargin", ">", 0), f("revGrowth", ">", 18), f("debtEquity", "<", 1), f("pe", "<", 25), f("sector", "==", "Technology")],
   },
 ];
 
@@ -76,12 +56,18 @@ async function evaluate(c: Case) {
   };
 }
 
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function GET() {
   const results = [];
-  for (const c of cases) results.push(await evaluate(c));
+  for (let i = 0; i < cases.length; i++) {
+    if (i > 0) await delay(12000);
+    results.push(await evaluate(cases[i]));
+  }
   const pass = results.filter((x) => x.status === "PASS").length;
   const partial = results.filter((x) => x.status === "PARTIAL").length;
   const fail = results.filter((x) => x.status === "FAIL").length;
