@@ -1,4 +1,4 @@
-import { parseWithCriterionLedgerV2 } from "../../../lib/criterion-ledger-v2";
+import { parseWithCriterionLedgerHardened } from "../../../lib/criterion-ledger-hardened";
 
 // Experimental endpoint for validating the criterion-ledger architecture.
 // It does not replace /api/parse and is intentionally limited to new screens.
@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 async function run(query: string) {
   if (!query) return Response.json({ error: "Describe the screen you want." }, { status: 400 });
   try {
-    const result = await parseWithCriterionLedgerV2(query);
+    const result = await parseWithCriterionLedgerHardened(query);
     return Response.json(result);
   } catch (error) {
     console.error("parse-v2 failed", error);
