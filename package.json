@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build && tsx eval/criterion-ledger-preview-smoke.ts",
+    "build": "next build && tsx eval/criterion-ledger-blind-50-v1.ts",
     "start": "next start",
     "ingest": "tsx scripts/ingest.ts",
     "ingest:investors": "tsx scripts/ingest-investor-holdings.ts",
@@ -20,6 +20,7 @@
     "eval:model": "MODEL_RUNS=2 MODEL_MIN_PASS_RATE=0.95 tsx eval/run.ts",
     "eval:live": "MODEL_MIN_PASS_RATE=0.95 tsx eval/live.ts",
     "eval:criterion-ledger-smoke": "tsx eval/criterion-ledger-preview-smoke.ts",
+    "eval:criterion-ledger-blind50": "tsx eval/criterion-ledger-blind-50-v1.ts",
     "eval:offline": "OFFLINE=1 tsx eval/run.ts",
     "test:p0-parser": "npm run test:parser-contract && npm run test:composite-regressions && npm run eval:offline",
     "test:retail-full": "npm run test:investor-language && npm run eval:moneyflock50 && npm run test:p0-parser && npm run eval:composite100 && npm run eval:retail100 && npm run eval:holdout100"
