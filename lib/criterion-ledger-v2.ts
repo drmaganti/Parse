@@ -40,41 +40,43 @@ export interface CriterionParseResult {
   assumptions: string[];
   ledger: CriterionLedgerItem[];
   audit: CriterionAuditResult;
-  diagnostics: { llmCalls: number; identifiedCriteria: number; accountedCriteria: number };
+  diagnostics: {
+    llmCalls: number;
+    identifiedCriteria: number;
+    accountedCriteria: number;
+    path: "normal" | "fallback";
+    maxLlmCalls: 2;
+  };
 }
+
+type CompletionFn = (input: { system: string; user: string }) => Promise<string>;
 
 type DefaultSpec = {
   field: string;
   op: Op;
   value: number;
-  phrase: RegExp;
   assumption: (phrase: string) => string;
 };
 
 const DEFAULTS: Record<string, DefaultSpec> = {
   profitable: {
     field: "operatingMargin", op: ">", value: 0,
-    phrase: /\bprofitable\b|\bmaking (?:a )?(?:profit|money)\b|\bturning a profit\b|\bearning money\b|\bin the black\b|\bpositive (?:earnings|net income)\b/i,
     assumption: (p) => `Read “${p}” as Operating margin > 0% using Parse's documented profitability default.`,
   },
   low_debt: {
     field: "debtEquity", op: "<", value: 1,
-    phrase: /\b(?:low|little|minimal|modest) debt\b|\bnot much debt\b|\bdebt (?:kept low|under control)\b|\b(?:low|modest|conservative) leverage\b|\bleverage on the low side\b|\blightly leveraged\b|\bnot overleveraged\b/i,
     assumption: (p) => `Read “${p}” as Debt / equity < 1 using Parse's documented low-debt default.`,
   },
   high_roic: {
     field: "roic", op: ">", value: 15,
-    phrase: /\b(?:high|strong|excellent|healthy)[- ]+roic\b/i,
     assumption: (p) => `Read “${p}” as ROIC > 15% using Parse's documented high-ROIC default.`,
   },
   reasonable_valuation: {
     field: "pe", op: "<", value: 25,
-    phrase: /\breasonable valuation\b|\breasonably valued\b|\bfair(?:ly)? valued\b|\bfair valuation\b|\bsensible valuation\b|\bvaluation looks fair\b|\bvaluation not excessive\b|\bnot expensive\b|\bnot overpriced\b|\bnot too (?:pricey|pricy)\b|\breasonably priced\b|\bpriced reasonably\b|\bfair price\b|\bsensible price\b/i,
     assumption: (p) => `Read “${p}” as P/E < 25 using Parse's documented reasonable-valuation default.`,
   },
   growth_stock: {
     field: "revGrowth", op: ">", value: 15,
-    phrase: /\bgrowth (?:stocks?|companies|names)\b/i,
     assumption: (p) => `Read “${p}” as Revenue growth > 15% using Parse's documented growth-stock default.`,
   },
 };
@@ -209,8 +211,8 @@ function compileCriterion(query: string, raw: RawCriterion): { item: CriterionLe
 
   if (basis === "parse_default") {
     const spec = DEFAULTS[concept];
-    if (!spec || !spec.phrase.test(phrase)) {
-      const why = !spec ? "That concept does not have a documented Parse default." : "The wording does not safely match that documented Parse default.";
+    if (!spec) {
+      const why = "That concept does not have a documented Parse default.";
       return { item: { phrase, concept, basis: "unresolved", status: "unresolved", filters: [], reason: why }, assumption: unresolvedMessage(phrase, why) };
     }
     const filter = coerceFilter({ field: spec.field, op: spec.op, value: spec.value }, "default");
@@ -272,22 +274,13 @@ function extractionSystem(): string {
     "If supported but ambiguous, basis=unresolved. If Parse has no suitable field, basis=unsupported. Both must retain the phrase.",
     "Every phrase must be an exact contiguous substring of the request. Do not combine unrelated criteria.",
     `Ranking only when explicitly requested: ${Object.keys(RANKINGS).join(", ")}; otherwise null.`,
-    'JSON only: {"criteria":[{"phrase":"exact","concept":"field|sector|default_key","basis":"explicit|semantic|parse_default|unsupported|unresolved","filters":[{"field":"revGrowth","op":">","value":12}],"reason":"optional"}],"ranking":null}',
-  ].join(" ");
-}
-
-function auditSystem(): string {
-  return [
-    "Audit semantic coverage. Compare ORIGINAL REQUEST with LEDGER and FINAL FILTERS.",
-    "Report every meaningful investment criterion that is absent or incorrectly represented (wrong field/operator/number/range/default).",
-    "Unsupported criteria are accounted for if present in ledger. Unresolved criteria are visible but should not be reported merely because they lack a filter; code separately decides whether to retry them.",
-    "Do not invent requirements. Issue phrase must be an exact contiguous substring from the request.",
-    'JSON only: {"issues":[{"phrase":"exact","type":"missing|incorrect","reason":"short"}]}',
+    "Before responding, compare the untouched original request against your proposed criteria. Put every criterion you believe is missing or uncertain in coverage_issues. This is the original-input-to-ledger completeness audit and must happen in this same call.",
+    'JSON only: {"criteria":[{"phrase":"exact","concept":"field|sector|default_key","basis":"explicit|semantic|parse_default|unsupported|unresolved","filters":[{"field":"revGrowth","op":">","value":12}],"reason":"optional"}],"coverage_issues":[{"phrase":"exact","type":"missing|incorrect","reason":"short"}],"ranking":null}',
   ].join(" ");
 }
 
 function recoverySystem(): string {
-  return [extractionSystem(), "ONE bounded recovery only. Re-extract ONLY the supplied issue phrases. Do not change other criteria."].join(" ");
+  return [extractionSystem(), "ONE bounded fallback only. Re-extract ONLY the supplied issue phrases. Do not change other criteria. coverage_issues must be empty unless a supplied phrase still cannot be represented."].join(" ");
 }
 
 function normalizeIssues(query: string, raw: unknown): Issue[] {
@@ -333,12 +326,15 @@ function neutralizeIssues(existing: CriterionLedgerItem[], issues: Issue[]): Raw
   return raw;
 }
 
-async function runAudit(query: string, ledger: CriterionLedgerItem[], filters: Filter[]): Promise<Issue[]> {
-  const raw = await complete({
-    system: auditSystem(),
-    user: `ORIGINAL REQUEST:\n${query}\n\nLEDGER:\n${JSON.stringify(ledger.map((i) => ({ phrase: i.phrase, concept: i.concept, basis: i.basis, status: i.status, filters: i.filters.map(({ field, op, value }) => ({ field, op, value })) })))}\n\nFINAL FILTERS:\n${JSON.stringify(filters.map(({ field, op, value }) => ({ field, op, value })))}`,
-  });
-  return normalizeIssues(query, extractJsonObject(raw).issues);
+function deterministicSectorCriteria(query: string, existing: RawCriterion[]): RawCriterion[] {
+  const additions: RawCriterion[] = [];
+  for (const [, rx] of SECTOR_ALIASES) {
+    const match = query.match(rx);
+    if (!match?.[0]) continue;
+    if (existing.some((item) => typeof item.phrase === "string" && overlaps(item.phrase, match[0]))) continue;
+    additions.push({ phrase: match[0], concept: "sector", basis: "semantic", filters: [] });
+  }
+  return [...existing, ...additions];
 }
 
 function resultStatus(compiled: ReturnType<typeof compileLedger>, recovered: boolean): "verified" | "recovered" | "needs_user_input" {
@@ -346,60 +342,37 @@ function resultStatus(compiled: ReturnType<typeof compileLedger>, recovered: boo
   return recovered ? "recovered" : "verified";
 }
 
-export async function parseWithCriterionLedgerV2(query: string): Promise<CriterionParseResult> {
+export async function parseWithCriterionLedgerV2(query: string, completion: CompletionFn = complete): Promise<CriterionParseResult> {
   let llmCalls = 0;
-  const extraction = extractJsonObject(await complete({ system: extractionSystem(), user: query }));
+  const extraction = extractJsonObject(await completion({ system: extractionSystem(), user: query }));
   llmCalls++;
-  let compiled = compileLedger(query, Array.isArray(extraction.criteria) ? extraction.criteria : []);
+  const extractedCriteria: RawCriterion[] = Array.isArray(extraction.criteria) ? extraction.criteria : [];
+  let compiled = compileLedger(query, deterministicSectorCriteria(query, extractedCriteria));
   const ranking = typeof extraction.ranking === "string" && RANKINGS[extraction.ranking] ? extraction.ranking : "marketCap";
-
-  let auditIssues: Issue[];
-  try {
-    auditIssues = await runAudit(query, compiled.ledger, compiled.filters); llmCalls++;
-  } catch {
-    return {
-      filters: compiled.filters, ranking,
-      interpretation: "Interpreted the request, but final semantic verification did not complete.",
-      assumptions: [...compiled.assumptions, "Parse could not complete its final semantic verification. Review the interpretation before running this screen."],
-      ledger: compiled.ledger, audit: { status: "unverified", issues: [], recoveryAttempted: false },
-      diagnostics: { llmCalls, identifiedCriteria: compiled.ledger.length, accountedCriteria: compiled.ledger.length },
-    };
-  }
-
-  const firstIssues = combineIssues(auditIssues, unresolvedIssues(compiled.ledger));
+  const coverageIssues = normalizeIssues(query, extraction.coverage_issues);
+  const firstIssues = combineIssues(coverageIssues, unresolvedIssues(compiled.ledger));
   if (!firstIssues.length) {
     return {
       filters: compiled.filters, ranking,
-      interpretation: "Every identified investment criterion was accounted for and independently verified.",
+      interpretation: "Every identified investment criterion was accounted for by the original-input completeness audit and deterministic compiler.",
       assumptions: compiled.assumptions, ledger: compiled.ledger,
       audit: { status: "verified", issues: [], recoveryAttempted: false },
-      diagnostics: { llmCalls, identifiedCriteria: compiled.ledger.length, accountedCriteria: compiled.ledger.length },
+      diagnostics: { llmCalls, identifiedCriteria: compiled.ledger.length, accountedCriteria: compiled.ledger.length, path: "normal", maxLlmCalls: 2 },
     };
   }
 
   let recoveredRaw: RawCriterion[] = [];
+  let recoveryCoverageIssues: Issue[] = [];
   try {
-    const recovery = extractJsonObject(await complete({ system: recoverySystem(), user: `ORIGINAL REQUEST:\n${query}\n\nISSUES:\n${JSON.stringify(firstIssues)}` }));
+    const recovery = extractJsonObject(await completion({ system: recoverySystem(), user: `ORIGINAL REQUEST:\n${query}\n\nISSUES:\n${JSON.stringify(firstIssues)}` }));
     llmCalls++;
     recoveredRaw = Array.isArray(recovery.criteria) ? recovery.criteria : [];
+    recoveryCoverageIssues = normalizeIssues(query, recovery.coverage_issues);
   } catch { recoveredRaw = []; }
 
   compiled = compileLedger(query, mergeRecovery(compiled.ledger, firstIssues, recoveredRaw));
 
-  let secondAuditIssues: Issue[];
-  try {
-    secondAuditIssues = await runAudit(query, compiled.ledger, compiled.filters); llmCalls++;
-  } catch {
-    return {
-      filters: compiled.filters, ranking,
-      interpretation: "A recovery was attempted, but final verification did not complete.",
-      assumptions: [...compiled.assumptions, "Parse could not verify the targeted recovery attempt. Review the interpretation before running this screen."],
-      ledger: compiled.ledger, audit: { status: "unverified", issues: firstIssues, recoveryAttempted: true },
-      diagnostics: { llmCalls, identifiedCriteria: compiled.ledger.length, accountedCriteria: compiled.ledger.length },
-    };
-  }
-
-  const remaining = combineIssues(secondAuditIssues, unresolvedIssues(compiled.ledger));
+  const remaining = combineIssues(recoveryCoverageIssues, unresolvedIssues(compiled.ledger));
   if (remaining.length) {
     const safe = compileLedger(query, neutralizeIssues(compiled.ledger, remaining));
     return {
@@ -407,7 +380,7 @@ export async function parseWithCriterionLedgerV2(query: string): Promise<Criteri
       interpretation: "Some criteria still need your input after one recovery attempt; those criteria were left out rather than guessed.",
       assumptions: safe.assumptions, ledger: safe.ledger,
       audit: { status: "needs_user_input", issues: remaining, recoveryAttempted: true },
-      diagnostics: { llmCalls, identifiedCriteria: safe.ledger.length, accountedCriteria: safe.ledger.length },
+      diagnostics: { llmCalls, identifiedCriteria: safe.ledger.length, accountedCriteria: safe.ledger.length, path: "fallback", maxLlmCalls: 2 },
     };
   }
 
@@ -417,6 +390,6 @@ export async function parseWithCriterionLedgerV2(query: string): Promise<Criteri
     interpretation: status === "recovered" ? "Every investment criterion was accounted for after one targeted recovery attempt." : "Some criteria still need your input.",
     assumptions: compiled.assumptions, ledger: compiled.ledger,
     audit: { status, issues: firstIssues, recoveryAttempted: true },
-    diagnostics: { llmCalls, identifiedCriteria: compiled.ledger.length, accountedCriteria: compiled.ledger.length },
+    diagnostics: { llmCalls, identifiedCriteria: compiled.ledger.length, accountedCriteria: compiled.ledger.length, path: "fallback", maxLlmCalls: 2 },
   };
 }
