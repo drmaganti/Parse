@@ -64,7 +64,9 @@ const key = (x: Pick<Filter, "field" | "op" | "value"> | Expected) => `${x.field
 async function run() {
   console.log(`=== CRITERION LEDGER BLIND 50 V1 === corpus=${CORPUS_SHA256}`);
   const results: any[] = [];
-  for (const c of cases) {
+  for (let index = 0; index < cases.length; index++) {
+    const c = cases[index];
+    if (index > 0) await new Promise((resolve) => setTimeout(resolve, 12000));
     try {
       const result = await parseWithCriterionLedgerHardened(c.query);
       const actual = new Set(result.filters.map(key));
@@ -91,8 +93,12 @@ async function run() {
   const silent = results.filter((r) => ["PARTIAL", "FAIL"].includes(r.status) && !r.visibleNonpass).length;
   const wrongThresholds = results.filter((r) => r.wrongThreshold).length;
   const unsafeExtras = results.filter((r) => Array.isArray(r.extra) && r.extra.length > 0).length;
+  const normalPath = results.filter((r) => r.diagnostics?.path === "normal").length;
+  const fallbackPath = results.filter((r) => r.diagnostics?.path === "fallback").length;
+  const modelCalls = results.reduce((sum, r) => sum + (r.diagnostics?.llmCalls ?? 0), 0);
   const exactRate = pass / cases.length;
   console.log(`BLIND50_SUMMARY PASS=${pass}/50 PARTIAL=${partial}/50 FAIL=${fail}/50 INFRA=${infra}/50 EXACT_RATE=${(exactRate * 100).toFixed(1)}% SILENT_NONPASS=${silent} WRONG_THRESHOLDS=${wrongThresholds} UNSAFE_EXTRAS=${unsafeExtras}`);
+  console.log(`BLIND50_MODEL_CALLS NORMAL_PATH=${normalPath}/50 FALLBACK_PATH=${fallbackPath}/50 TOTAL_CALLS=${modelCalls} AVG_CALLS=${(modelCalls / Math.max(1, pass + partial + fail)).toFixed(2)} MAX_ALLOWED=2`);
   if (infra > 0) process.exitCode = 2;
 }
 
