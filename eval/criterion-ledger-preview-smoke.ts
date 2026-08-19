@@ -1,4 +1,4 @@
-import { parseWithCriterionLedgerV2 } from "../lib/criterion-ledger-v2";
+import { parseWithCriterionLedgerHardened } from "../lib/criterion-ledger-hardened";
 import type { Filter, FilterValue, Op } from "../lib/fields";
 
 type Expected = { field: string; op: Op; value: FilterValue };
@@ -27,28 +27,31 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const key = (x: Pick<Filter, "field" | "op" | "value"> | Expected) => `${x.field}|${x.op}|${String(x.value).toLowerCase()}`;
 
 async function run() {
-  console.log("=== CRITERION LEDGER V2 LIVE PREVIEW SMOKE ===");
+  console.log("=== CRITERION LEDGER HARDENED LIVE PREVIEW SMOKE ===");
   const results: any[] = [];
   for (let i = 0; i < cases.length; i++) {
     if (i > 0) await delay(65000);
     const c = cases[i];
-    const result = await parseWithCriterionLedgerV2(c.query);
+    const result = await parseWithCriterionLedgerHardened(c.query);
     const actual = new Set(result.filters.map(key));
     const expected = new Set(c.expected.map(key));
     const missing = c.expected.filter((x) => !actual.has(key(x))).map(key);
     const extra = result.filters.filter((x) => !expected.has(key(x))).map(key);
     const matched = c.expected.length - missing.length;
     const status = missing.length === 0 && extra.length === 0 ? "PASS" : matched > 0 ? "PARTIAL" : "FAIL";
-    const visibleNonpass = status !== "PASS" && ["needs_user_input", "unverified"].includes(result.audit.status);
+    const visibleNonpass = status !== "PASS" && (
+      ["needs_user_input", "unverified"].includes(result.audit.status)
+      || result.ledger.some((item) => item.status === "unsupported" || item.status === "unresolved")
+    );
     const row = { id: c.id, status, query: c.query, actual: [...actual], missing, extra, visibleNonpass, audit: result.audit, assumptions: result.assumptions, ledger: result.ledger.map((item) => ({ phrase: item.phrase, concept: item.concept, basis: item.basis, status: item.status, filters: item.filters.map(({ field, op, value }) => ({ field, op, value })), reason: item.reason })), diagnostics: result.diagnostics };
     results.push(row);
-    console.log("CRITERION_LEDGER_V2_RESULT=" + JSON.stringify(row));
+    console.log("CRITERION_LEDGER_HARDENED_RESULT=" + JSON.stringify(row));
   }
   const pass = results.filter((r) => r.status === "PASS").length;
   const partial = results.filter((r) => r.status === "PARTIAL").length;
   const fail = results.filter((r) => r.status === "FAIL").length;
   const silent = results.filter((r) => r.status !== "PASS" && !r.visibleNonpass).length;
-  console.log(`CRITERION_LEDGER_V2_SUMMARY PASS=${pass}/${results.length} PARTIAL=${partial}/${results.length} FAIL=${fail}/${results.length} SILENT_NONPASS=${silent}`);
+  console.log(`CRITERION_LEDGER_HARDENED_SUMMARY PASS=${pass}/${results.length} PARTIAL=${partial}/${results.length} FAIL=${fail}/${results.length} SILENT_NONPASS=${silent}`);
 }
 
-run().catch((error) => { console.error("CRITERION_LEDGER_V2_EVAL_ERROR", error); process.exit(1); });
+run().catch((error) => { console.error("CRITERION_LEDGER_HARDENED_EVAL_ERROR", error); process.exit(1); });
