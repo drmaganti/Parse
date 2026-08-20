@@ -44,7 +44,7 @@ async function groq(system: string, user: string): Promise<string> {
         body: JSON.stringify({
           model: GROQ_MODEL,
           temperature: 0,
-          reasoning_effort: "low",
+          reasoning_effort: "medium",
           reasoning_format: "hidden",
           max_completion_tokens: 1024,
           response_format: { type: "json_object" },
