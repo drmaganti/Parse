@@ -586,6 +586,98 @@ async function formalLogicHandlesInclusiveExclusionsAndAnnualHighs() {
   assert(!annualHigh.filters.some((filter) => key(filter) === "from52wHigh|<=|-4"));
 }
 
+async function narrowModelEvidenceRetainsClearOuterExclusionScope() {
+  const cases = [
+    {
+      query: "Exclude businesses with beta at or above 1.25; focus on healthcare equipment makers with forward P/E below 23.",
+      criteria: [
+        { phrase: "beta at or above 1.25", concept: "beta", basis: "explicit", filters: [{ field: "beta", op: ">=", value: 1.25 }] },
+        { phrase: "healthcare equipment makers", concept: "sector", basis: "semantic", filters: [{ field: "sector", op: "==", value: "Healthcare" }] },
+        { phrase: "forward P/E below 23", concept: "forwardPe", basis: "explicit", filters: [{ field: "forwardPe", op: "<", value: 23 }] },
+      ],
+      expected: "beta|<|1.25",
+      forbidden: "beta|>=|1.25",
+      evidence: "Exclude businesses with beta at or above 1.25",
+    },
+    {
+      query: "Communications companies, but leave out any with RSI above 68; require free-cash-flow yield of at least 4%.",
+      criteria: [
+        { phrase: "Communications companies", concept: "sector", basis: "semantic", filters: [{ field: "sector", op: "==", value: "Communications" }] },
+        { phrase: "RSI above 68", concept: "rsi", basis: "explicit", filters: [{ field: "rsi", op: ">", value: 68 }] },
+        { phrase: "free-cash-flow yield of at least 4%", concept: "fcfYield", basis: "explicit", filters: [{ field: "fcfYield", op: ">=", value: 4 }] },
+      ],
+      expected: "rsi|<=|68",
+      forbidden: "rsi|>|68",
+      evidence: "leave out any with RSI above 68",
+    },
+    {
+      query: "Avoid stocks with payout ratio below 20%; show profitable consumer businesses.",
+      criteria: [
+        { phrase: "payout ratio below 20%", concept: "payoutRatio", basis: "explicit", filters: [{ field: "payoutRatio", op: "<", value: 20 }] },
+        { phrase: "profitable", concept: "profitable", basis: "parse_default", filters: [] },
+        { phrase: "consumer businesses", concept: "sector", basis: "semantic", filters: [{ field: "sector", op: "==", value: "Consumer" }] },
+      ],
+      expected: "payoutRatio|>=|20",
+      forbidden: "payoutRatio|<|20",
+      evidence: "Avoid stocks with payout ratio below 20%",
+    },
+  ];
+
+  for (const testCase of cases) {
+    let calls = 0;
+    const result = await parseWithCriterionLedgerV2(testCase.query, async () => {
+      calls++;
+      return json({ criteria: testCase.criteria, coverage_issues: [], ranking: null });
+    });
+    assert.equal(calls, 1);
+    assert.equal(result.audit.status, "verified");
+    assert(result.filters.some((filter) => key(filter) === testCase.expected));
+    assert(!result.filters.some((filter) => key(filter) === testCase.forbidden));
+    assert(result.ledger.some((item) => item.phrase === testCase.evidence));
+  }
+
+  let ambiguousCalls = 0;
+  const ambiguous = await parseWithCriterionLedgerV2(
+    "Technology companies considering whether to exclude stocks with beta above 1.2.",
+    async () => {
+      ambiguousCalls++;
+      return json({
+        criteria: [
+          { phrase: "Technology companies", concept: "sector", basis: "semantic", filters: [{ field: "sector", op: "==", value: "Technology" }] },
+          { phrase: "beta above 1.2", concept: "beta", basis: "explicit", filters: [{ field: "beta", op: ">", value: 1.2 }] },
+        ],
+        coverage_issues: [],
+        ranking: null,
+      });
+    },
+  );
+  assert.equal(ambiguousCalls, 2);
+  assert.equal(ambiguous.audit.status, "needs_user_input");
+  assert(!ambiguous.filters.some((filter) => filter.field === "beta"));
+}
+
+async function naturalRankingFirstPhrasesAreAlreadyAccountedFor() {
+  let calls = 0;
+  const result = await parseWithCriterionLedgerV2(
+    "Utility operators with dividend yield from 2.5% to 5%, payout ratio no more than 75%, highest yield first.",
+    async () => {
+      calls++;
+      return json({
+        criteria: [
+          { phrase: "Utility operators", concept: "sector", basis: "semantic", filters: [{ field: "sector", op: "==", value: "Utilities" }] },
+          { phrase: "dividend yield from 2.5% to 5%", concept: "divYield", basis: "explicit", filters: [{ field: "divYield", op: ">=", value: 2.5 }, { field: "divYield", op: "<=", value: 5 }] },
+          { phrase: "payout ratio no more than 75%", concept: "payoutRatio", basis: "explicit", filters: [{ field: "payoutRatio", op: "<=", value: 75 }] },
+        ],
+        coverage_issues: [],
+        ranking: "dividend",
+      });
+    },
+  );
+  assert.equal(calls, 1);
+  assert.equal(result.audit.status, "verified");
+  assert.equal(result.ranking, "dividend");
+}
+
 async function unknownScalarRelationFailsSafely() {
   let calls = 0;
   const result = await parseWithCriterionLedgerV2("Technology companies with a preferred beta of 1.2.", async () => {
@@ -855,6 +947,8 @@ async function run() {
   await metricFamilyEvidenceIgnoresPunctuationVariants();
   await excludedNumericPredicateCompilesItsComplement();
   await formalLogicHandlesInclusiveExclusionsAndAnnualHighs();
+  await narrowModelEvidenceRetainsClearOuterExclusionScope();
+  await naturalRankingFirstPhrasesAreAlreadyAccountedFor();
   await unknownScalarRelationFailsSafely();
   await marketCapRangesGroundUnitsAtBothEndpoints();
   await substantialUncoveredClauseTriggersSafeRecovery();
