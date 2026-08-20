@@ -35,7 +35,7 @@ const DISTANCE_TO_STORED: Record<ScalarRelation, ScalarRelation> = {
 };
 
 const HIGH_REFERENCE = /\b(?:52[- ]?week|52w|annual|yearly|one[- ]year|1[- ]year|year)\s+(?:price\s+)?high\b/i;
-const EXCLUSION = /\b(?:exclude|excluding|avoid|avoiding|without)\b/i;
+const EXCLUSION = /\b(?:exclude|excluding|avoid|avoiding|omit|omitting|without|leave\s+out|screen\s+out|filter\s+out)\b/i;
 
 export function relationFromPhrase(phrase: string): ScalarRelation | null {
   if (/\b(?:at most|no more than|no higher than|no greater than|not (?:above|over|higher than|greater than)|maximum|max|not exceeding|up to|at or below)\b|<=/i.test(phrase)) return "lte";
