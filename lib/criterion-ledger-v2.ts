@@ -221,6 +221,50 @@ function coerceCriterionFilter(raw: unknown, source: Filter["source"] = "ai"): F
   return coerceFilter(raw, source);
 }
 
+const EXCLUSION_SCOPE_MARKER = /\b(?:exclude|excluding|avoid|avoiding|omit|omitting|leave\s+out|screen\s+out|filter\s+out)\b/i;
+const EXCLUSION_SCOPE_FILLERS = new Set([
+  "all", "any", "business", "businesses", "companies", "company", "firm", "firms", "have", "having",
+  "holding", "holdings", "maker", "makers", "name", "names", "one", "ones", "operator", "operators",
+  "provider", "providers", "security", "securities", "share", "shares", "stock", "stocks", "that", "those",
+  "where", "whose", "with",
+]);
+
+// Models sometimes preserve the numeric predicate but return too narrow an
+// evidence span, dropping a governing "exclude/avoid" immediately before it.
+// Widen only inside the same punctuation-delimited clause, only across a tiny
+// allowlist of scope words, and only when doing so changes a grounded scalar
+// relation into its formal complement. Anything less clear remains untouched
+// for the completeness auditor to reject safely.
+function scopedExplicitPhrase(query: string, phrase: string, basis: CriterionBasis, rawFilters: unknown): { phrase: string; ambiguousExclusion: boolean } {
+  const unchanged = { phrase, ambiguousExclusion: false };
+  if (basis !== "explicit" || !Array.isArray(rawFilters) || rawFilters.length !== 1 || EXCLUSION_SCOPE_MARKER.test(phrase)) return unchanged;
+  const proposed = coerceCriterionFilter(rawFilters[0]);
+  if (!proposed || FIELDS[proposed.field]?.kind !== "num") return unchanged;
+  const directOp = groundedLogicalOperator(phrase, proposed.field);
+  if (!directOp) return unchanged;
+
+  const source = query.toLowerCase().replace(/[’]/g, "'");
+  const needle = phrase.toLowerCase().replace(/[’]/g, "'");
+  const phraseStart = source.indexOf(needle);
+  if (phraseStart < 0) return unchanged;
+  const clauseStart = Math.max(query.lastIndexOf(",", phraseStart), query.lastIndexOf(";", phraseStart), query.lastIndexOf(".", phraseStart), query.lastIndexOf(":", phraseStart)) + 1;
+  const prefix = query.slice(clauseStart, phraseStart);
+  const matches = [...prefix.matchAll(/\b(?:exclude|excluding|avoid|avoiding|omit|omitting|leave\s+out|screen\s+out|filter\s+out)\b/gi)];
+  const marker = matches.at(-1);
+  if (!marker || marker.index === undefined) return unchanged;
+
+  const leading = prefix.slice(0, marker.index).trim();
+  const scopeWords = words(prefix.slice(marker.index + marker[0].length));
+  if (scopeWords.length > 6 || scopeWords.some((word) => !EXCLUSION_SCOPE_FILLERS.has(word))) return unchanged;
+  if (/\b(?:not|never|whether|maybe|possibly|consider|considering)\b/i.test(leading)) {
+    return { phrase, ambiguousExclusion: true };
+  }
+
+  const expanded = query.slice(clauseStart + marker.index, phraseStart + phrase.length).trim();
+  const scopedOp = groundedLogicalOperator(expanded, proposed.field);
+  return scopedOp && scopedOp !== directOp ? { phrase: expanded, ambiguousExclusion: false } : unchanged;
+}
+
 function isRangePhrase(phrase: string): boolean {
   const numericEndpoints = phrase.match(/-?\d+(?:\.\d+)?/g) ?? [];
   if (numericEndpoints.length < 2) return false;
@@ -366,8 +410,8 @@ function semanticDefaultConcept(phrase: string, concept: string, rawFilters: unk
 }
 
 function compileCriterion(query: string, raw: RawCriterion): { item: CriterionLedgerItem; assumption?: string } | null {
-  const phrase = exactPhraseFromQuery(query, raw.phrase);
-  if (!phrase) return null;
+  const exactPhrase = exactPhraseFromQuery(query, raw.phrase);
+  if (!exactPhrase) return null;
   let concept = canonicalConcept(raw.concept);
   const originalConcept = concept;
   let basis = raw.basis as CriterionBasis;
@@ -376,13 +420,20 @@ function compileCriterion(query: string, raw: RawCriterion): { item: CriterionLe
     if (sectorFilter?.field === "sector" && (sectorFilter.op === "==" || sectorFilter.op === "!=")) concept = "sector";
   }
   if (basis === "semantic") {
-    const normalizedDefault = semanticDefaultConcept(phrase, concept, raw.filters);
+    const normalizedDefault = semanticDefaultConcept(exactPhrase, concept, raw.filters);
     if (normalizedDefault) {
       concept = normalizedDefault;
       basis = "parse_default";
     }
   }
+  const scopedPhrase = scopedExplicitPhrase(query, exactPhrase, basis, raw.filters);
+  const phrase = scopedPhrase.phrase;
   const reason = typeof raw.reason === "string" ? raw.reason.trim() : undefined;
+
+  if (scopedPhrase.ambiguousExclusion) {
+    const why = "The numeric predicate may be governed by uncertain or negated exclusion language, so Parse left it out rather than invert it unsafely.";
+    return { item: { phrase, concept, basis: "unresolved", status: "unresolved", filters: [], resolution: "unresolved", normalizations: [], reason: why }, assumption: unresolvedMessage(phrase, why) };
+  }
 
   if (basis === "unsupported") return { item: { phrase, concept, basis, status: "unsupported", filters: [], resolution: "unsupported", normalizations: [], reason } };
   if (basis === "unresolved") return { item: { phrase, concept, basis, status: "unresolved", filters: [], resolution: "unresolved", normalizations: [], reason }, assumption: unresolvedMessage(phrase, reason) };
@@ -453,7 +504,7 @@ function extractionSystem(): string {
     "You are a semantic investment-query normalizer, not a phrase matcher. Infer meaning from arbitrary natural language, including wording you have never seen before.",
     "Extract EVERY meaningful investment screening criterion into JSON. Preserve each exact source phrase; never silently omit unfamiliar wording. Grammatical connectors such as whose/that/with are not criteria by themselves.",
     `Fields: ${fieldVocab()}. Sectors: ${SECTORS.join(", ")}.`,
-    "For a supported numeric metric with a stated number, concept MUST be its exact field key, basis=explicit, and filters must preserve the exact semantic comparator and copy the stated number. A range is two filters on that same field.",
+    "For a supported numeric metric with a stated number, concept MUST be its exact field key, basis=explicit, and filters must preserve the exact semantic comparator and copy the stated number. A range is two filters on that same field. If exclude/avoid/leave-out language governs a numeric predicate, retain those governing words inside that criterion's exact phrase; Parse will compile the Boolean complement deterministically.",
     "For yield metrics, the exact evidence phrase must retain the defining family: dividend/distribution yield, earnings yield, or FCF/free-cash-flow yield. Rental income or rental yield, bond/coupon yield, and other unsupported yield families must be marked unsupported; never substitute a supported yield field.",
     "Sector/industry requirements: infer the closest controlled sector from meaning, not a word list. Use concept=sector, basis=semantic, and one sector filter whose value is exactly one supplied sector. Preserve exclusions with op=!=. If the business category does not imply one supplied sector with high confidence, mark it unresolved.",
     `Common sector language (examples, not an exhaustive vocabulary): ${sectorLexiconPrompt()}. Infer semantically when the user's wording is absent from these examples.`,
@@ -645,11 +696,11 @@ function clauseAround(query: string, start: number, end: number): string {
 }
 
 const RANKING_INTENTS: Array<{ key: string; pattern: RegExp }> = [
-  { key: "dividend", pattern: /\b(?:rank(?:ed)?|sort(?:ed)?|order(?:ed)?)\s+(?:by\s+)?(?:the\s+)?highest\s+(?:dividend\s+)?yield\b/i },
-  { key: "quality", pattern: /\b(?:rank(?:ed)?|sort(?:ed)?|order(?:ed)?)\s+(?:by\s+)?(?:the\s+)?highest\s+(?:revenue\s+)?growth\b/i },
+  { key: "dividend", pattern: /\b(?:rank(?:ed)?|sort(?:ed)?|order(?:ed)?)\s+(?:by\s+)?(?:the\s+)?highest\s+(?:dividend\s+)?yield\b|\bhighest\s+(?:dividend\s+)?yield\s+first\b/i },
+  { key: "quality", pattern: /\b(?:rank(?:ed)?|sort(?:ed)?|order(?:ed)?)\s+(?:by\s+)?(?:the\s+)?highest\s+(?:revenue\s+)?growth\b|\bhighest\s+(?:revenue\s+)?growth\s+first\b/i },
   { key: "value", pattern: /\b(?:rank(?:ed)?|sort(?:ed)?|order(?:ed)?|show)\s+(?:by\s+)?(?:the\s+)?(?:cheapest|lowest valuation)\b|\bcheapest\s+first\b/i },
-  { key: "momentum", pattern: /\b(?:rank(?:ed)?|sort(?:ed)?|order(?:ed)?)\s+(?:by\s+)?(?:the\s+)?strongest\s+momentum\b/i },
-  { key: "decline", pattern: /\b(?:rank(?:ed)?|sort(?:ed)?|order(?:ed)?)\s+(?:by\s+)?(?:the\s+)?(?:most beaten[- ]down|biggest decline)\b/i },
+  { key: "momentum", pattern: /\b(?:rank(?:ed)?|sort(?:ed)?|order(?:ed)?)\s+(?:by\s+)?(?:the\s+)?strongest\s+momentum\b|\bstrongest\s+momentum\s+first\b/i },
+  { key: "decline", pattern: /\b(?:rank(?:ed)?|sort(?:ed)?|order(?:ed)?)\s+(?:by\s+)?(?:the\s+)?(?:most beaten[- ]down|biggest decline)\b|\b(?:most beaten[- ]down|biggest decline)\s+first\b/i },
   { key: "marketCap", pattern: /\b(?:rank(?:ed)?|sort(?:ed)?|order(?:ed)?)\s+(?:by\s+)?(?:the\s+)?(?:largest|market cap(?:italization)?)\b|\blargest\s+first\b/i },
 ];
 
