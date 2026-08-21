@@ -30,6 +30,31 @@ function passes(stock: StockRow, f: Filter): boolean {
   }
 }
 
+function issuerKey(stock: StockRow): string {
+  const name = stock.name?.trim().toLowerCase();
+  return name || `symbol:${stock.symbol.toUpperCase()}`;
+}
+
+function preferredListing(a: StockRow, b: StockRow): StockRow {
+  const av = a.avg_volume_20d ?? -1;
+  const bv = b.avg_volume_20d ?? -1;
+  if (av !== bv) return av > bv ? a : b;
+  const am = a.market_cap ?? -1;
+  const bm = b.market_cap ?? -1;
+  if (am !== bm) return am > bm ? a : b;
+  return a.symbol.localeCompare(b.symbol) <= 0 ? a : b;
+}
+
+export function dedupeIssuers(rows: StockRow[]): StockRow[] {
+  const byIssuer = new Map<string, StockRow>();
+  for (const row of rows) {
+    const key = issuerKey(row);
+    const current = byIssuer.get(key);
+    byIssuer.set(key, current ? preferredListing(current, row) : row);
+  }
+  return [...byIssuer.values()];
+}
+
 export interface ScreenResult extends StockRow {
   _score: number;
 }
@@ -45,8 +70,8 @@ export function runScreen(
   );
   const ranking = RANKINGS[rankingKey] ?? RANKINGS.marketCap;
 
-  return rows
-    .filter((s) => active.every((f) => passes(s, f)))
+  const matches = rows.filter((s) => active.every((f) => passes(s, f)));
+  return dedupeIssuers(matches)
     .map((s) => ({ ...s, _score: ranking.score(s) }))
     .sort((a, b) => a._score - b._score)
     .slice(0, limit);
