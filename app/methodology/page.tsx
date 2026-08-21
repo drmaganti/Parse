@@ -21,8 +21,16 @@ function Logo() {
 const STEPS = [
   ["01", "Describe the idea", "Write the screen the way you would explain it to another person."],
   ["02", "Parse translates it", "Your words are mapped to explicit metrics, thresholds, and a ranking. The model builds the screen; it does not choose stocks directly."],
-  ["03", "Inspect the interpretation", "Every inferred condition is shown as a filter. When wording is ambiguous, Parse surfaces the assumption rather than hiding it."],
-  ["04", "Stay in control", "Change or remove filters and rerun the screen. Your edits remain visible and intentional."],
+  ["03", "Confirm before screening", "Parse shows every interpreted filter before it screens the universe. Edit, add, or remove a criterion if the interpretation is not what you meant."],
+  ["04", "Run the verified screen", "Only after you confirm the criteria does Parse execute the screen. Direct edits remain visible and intentional."],
+];
+
+const DOCUMENTED_DEFAULTS = [
+  ["Profitable / making money", "Operating margin > 0%", "Uses a positive operating margin as the supported profitability test."],
+  ["Low debt / low leverage", "Debt / equity < 1", "Uses debt-to-equity as the supported leverage measure."],
+  ["High / strong ROIC", "ROIC > 15%", "Uses latest fiscal-year return on invested capital."],
+  ["Reasonable / fair valuation", "P/E < 25", "Uses trailing P/E as the default valuation measure when no valuation metric is named."],
+  ["Growth stock", "Revenue growth > 15%", "Uses revenue growth when a growth stock is requested without a stated growth threshold."],
 ];
 
 export default function Methodology() {
@@ -59,16 +67,28 @@ export default function Methodology() {
 
         <section style={{ marginTop: 38, maxWidth: 760 }}>
           <h2 style={{ fontFamily: DISP, fontSize: 22, margin: "0 0 10px", fontWeight: 600 }}>When wording is ambiguous</h2>
-          <p style={{ color: T.inkSoft, fontSize: 15, lineHeight: 1.65, margin: 0 }}>Ideas such as “safe,” “cheap,” and “quality” do not map to one universally correct metric. Parse makes an interpretation, shows the resulting filters, and calls out assumptions when they matter. You get the final say.</p>
+          <p style={{ color: T.inkSoft, fontSize: 15, lineHeight: 1.65, margin: 0 }}>Ideas such as “safe,” “cheap,” and “quality” do not map to one universally correct metric. Parse either maps the wording to a supported criterion it can justify, uses one of the documented defaults below, or leaves the criterion out rather than silently substituting something else. You review the result before the screen runs.</p>
+        </section>
+
+        <section id="documented-defaults" style={{ marginTop: 34, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: 20, maxWidth: 760, scrollMarginTop: 80 }}>
+          <div style={{ fontFamily: MONO, fontSize: 11.5, color: T.accent, letterSpacing: ".05em", marginBottom: 8 }}>DOCUMENTED DEFAULTS</div>
+          <h2 style={{ fontFamily: DISP, fontSize: 22, margin: "0 0 10px", fontWeight: 600 }}>What Parse means when you do not give a number</h2>
+          <p style={{ color: T.inkSoft, fontSize: 14.5, lineHeight: 1.6, margin: "0 0 16px" }}>These defaults are used only for the qualitative meanings listed here when you have not already named a metric or threshold. Any default appears in the review step before screening and can be edited or removed.</p>
+          <div style={{ display: "grid", gap: 0, border: `1px solid ${T.border}`, borderRadius: 10, overflow: "hidden" }}>
+            {DOCUMENTED_DEFAULTS.map(([phrase, rule, why], i) => <div key={phrase} style={{ padding: "13px 14px", background: i % 2 ? T.surfaceAlt : T.surface, borderTop: i ? `1px solid ${T.border}` : "none" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "baseline" }}><strong style={{ fontSize: 14 }}>{phrase}</strong><span style={{ fontFamily: MONO, fontSize: 13, color: T.accentInk }}>{rule}</span></div>
+              <div style={{ marginTop: 5, color: T.inkSoft, fontSize: 13.5, lineHeight: 1.5 }}>{why}</div>
+            </div>)}
+          </div>
         </section>
 
         <section style={{ marginTop: 34, background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 14, padding: 20, maxWidth: 760 }}>
           <h2 style={{ fontFamily: DISP, fontSize: 19, margin: "0 0 12px", fontWeight: 600 }}>Data and current scope</h2>
           <div style={{ display: "grid", gap: 9, color: T.inkSoft, fontSize: 14.5, lineHeight: 1.55 }}>
-            <div><b style={{ color: T.ink }}>Universe:</b> S&amp;P 500 and Nasdaq 100.</div>
-            <div><b style={{ color: T.ink }}>Data sources:</b> company profiles, fundamental metrics, and quote fields are sourced through Finnhub. Historical price series used to calculate technical indicators are sourced from Yahoo Finance by default; the ingestion pipeline can also use Finnhub candles.</div>
+            <div><b style={{ color: T.ink }}>Universe:</b> S&amp;P 500 and Nasdaq 100. Results are deduplicated by issuer; when multiple share classes are present, Parse prefers the listing with the higher 20-day average volume.</div>
+            <div><b style={{ color: T.ink }}>Data sources:</b> company profiles, fundamental metrics, and quote fields are sourced through Finnhub. Historical price and volume series used for locally derived indicators are sourced from Yahoo Finance by default; the ingestion pipeline can also use Finnhub candles.</div>
             <div><b style={{ color: T.ink }}>Refresh cadence:</b> Parse stores a cached screening dataset that is refreshed daily. It is not a real-time market-data terminal.</div>
-            <div><b style={{ color: T.ink }}>Derived fields:</b> RSI, moving averages, weekly change, and distance from the 52-week high are calculated from historical price data when available.</div>
+            <div><b style={{ color: T.ink }}>Derived fields:</b> RSI, moving averages, weekly change, distance from the 52-week high, and 20-day average daily share volume are calculated from historical market data when available. Average volume is stored in millions of shares per day.</div>
             <div><b style={{ color: T.ink }}>Missing data:</b> a company is excluded when a metric required by the active screen is unavailable.</div>
             <div><b style={{ color: T.ink }}>Purpose:</b> research and exploration, not investment advice or a recommendation to buy or sell a security.</div>
           </div>
