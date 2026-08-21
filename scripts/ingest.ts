@@ -21,7 +21,7 @@ const supabase = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSessio
 
 interface Row {
   symbol: string; name: string; sector: string | null;
-  price: number | null; market_cap: number | null;
+  price: number | null; market_cap: number | null; avg_volume_20d: number | null;
   pe: number | null; forward_pe: number | null; pb: number | null; ps: number | null; peg: number | null; forward_peg: number | null; earnings_yield: number | null;
   div_yield: number | null; div_growth_5y: number | null; payout_ratio: number | null;
   beta: number | null; rev_growth: number | null;
@@ -44,6 +44,7 @@ async function build(symbol: string): Promise<Row | null> {
     let sma200: number | null = null;
     let from52: number | null = null;
     let chg1w: number | null = null;
+    let avgVolume20d: number | null = null;
 
     if (CANDLE_SOURCE !== "none") {
       const candles = CANDLE_SOURCE === "finnhub" ? await fetchCandles(symbol, FINNHUB) : await fetchYahooCandles(symbol);
@@ -53,6 +54,8 @@ async function build(symbol: string): Promise<Row | null> {
         sma200 = sma(candles.closes, 200);
         chg1w = pctChange(candles.closes, 5);
         from52 = fromHigh(candles.highs.length ? candles.highs : candles.closes, candles.closes[candles.closes.length - 1]);
+        const recentVolumes = candles.volumes.filter((v) => Number.isFinite(v) && v >= 0).slice(-20);
+        if (recentVolumes.length) avgVolume20d = recentVolumes.reduce((sum, v) => sum + v, 0) / recentVolumes.length / 1_000_000;
       }
     }
     if (from52 == null && metrics.high52 && quote.price) from52 = ((quote.price - metrics.high52) / metrics.high52) * 100;
@@ -64,6 +67,7 @@ async function build(symbol: string): Promise<Row | null> {
       sector: profile.sector,
       price: quote.price ?? null,
       market_cap: metrics.marketCap != null ? round(metrics.marketCap / 1000, 1) : null,
+      avg_volume_20d: round(avgVolume20d, 2),
       pe: round(metrics.pe), forward_pe: round(metrics.forwardPe), pb: round(metrics.pb), ps: round(metrics.ps),
       peg: round(metrics.peg, 2), forward_peg: round(metrics.forwardPeg, 2), earnings_yield: round(metrics.earningsYield),
       div_yield: round(metrics.divYield), div_growth_5y: round(metrics.divGrowth5Y), payout_ratio: round(metrics.payoutRatio),
