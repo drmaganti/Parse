@@ -114,12 +114,16 @@ export async function fetchCandles(
   symbol: string,
   key: string,
   days = 260
-): Promise<{ closes: number[]; highs: number[] } | null> {
+): Promise<{ closes: number[]; highs: number[]; volumes: number[] } | null> {
   const to = Math.floor(Date.now() / 1000);
   const from = to - days * 24 * 3600;
   const c = await get(`/stock/candle?symbol=${symbol}&resolution=D&from=${from}&to=${to}`, key);
   if (c?.s !== "ok" || !Array.isArray(c.c)) return null;
-  return { closes: c.c as number[], highs: (c.h as number[]) ?? [] };
+  return {
+    closes: c.c as number[],
+    highs: (c.h as number[]) ?? [],
+    volumes: Array.isArray(c.v) ? (c.v as number[]) : [],
+  };
 }
 
 function num(v: any): number | undefined {
