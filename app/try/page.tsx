@@ -16,6 +16,15 @@ const T = {
 const DISP = "var(--font-display), 'Instrument Sans', system-ui, sans-serif";
 const MONO = "var(--font-mono), 'JetBrains Mono', ui-monospace, monospace";
 
+type ReviewBase = {
+  filters: Filter[];
+  ranking: string;
+  results: ScreenResult[];
+  interpretation: string;
+  assumptions: string[];
+  conflict: string;
+};
+
 function acquisitionSource() {
   if (typeof window === "undefined") return "unknown";
   return new URLSearchParams(window.location.search).get("source") || "direct";
@@ -40,6 +49,9 @@ export default function TryPage() {
   const [conflict, setConflict] = useState("");
   const [runs, setRuns] = useState(0);
   const [hasRun, setHasRun] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const [reviewBase, setReviewBase] = useState<ReviewBase | null>(null);
+  const [pendingRefine, setPendingRefine] = useState(false);
   const [shareNote, setShareNote] = useState("");
   const [adding, setAdding] = useState(false);
   const [universe, setUniverse] = useState<ScreenUniverse | undefined>();
@@ -76,16 +88,19 @@ export default function TryPage() {
     const issue = findFilterConflict(next);
     setConflict(issue || "");
     setFilters(next);
-    setResults(issue ? [] : runScreen(stocks, next, nextRanking, 25));
+    if (!reviewing) setResults(issue ? [] : runScreen(stocks, next, nextRanking, 25));
     setSort(null);
   };
 
   const execute = async () => {
     const instruction = input.trim();
-    if (!instruction || loading || runs >= 3) return;
+    if (!instruction || loading || reviewing || runs >= 3) return;
     setLoading(true); setError(""); setShareNote("");
     const isRefine = hasRun;
-    trackEvent("screen_run_started", { guest_run: runs + 1, refine: isRefine, source: acquisitionSource() });
+    if (isRefine) setReviewBase({ filters, ranking, results, interpretation, assumptions, conflict });
+    else setReviewBase(null);
+    setPendingRefine(isRefine);
+    trackEvent("screen_interpretation_started", { guest_run: runs + 1, refine: isRefine, source: acquisitionSource() });
     try {
       const res = await fetch("/api/parse", {
         method: "POST",
@@ -98,42 +113,56 @@ export default function TryPage() {
       const nextRanking = body.ranking || ranking || "marketCap";
       const issue = findFilterConflict(next);
       setFilters(next); setRanking(nextRanking); setInterpretation(body.interpretation || ""); setAssumptions(body.assumptions || []);
-      setConflict(issue || "");
-      setResults(issue ? [] : runScreen(stocks, next, nextRanking, 25));
-      setSort(null);
-      if (!hasRun) setScreenQuery(instruction);
-      setHasRun(true);
-      setInput("");
-      setRuns((n) => n + 1);
-      trackEvent("screen_run_success", { guest_run: runs + 1, refine: isRefine, filter_count: next.length, result_count: issue ? 0 : runScreen(stocks, next, nextRanking, 25).length, source: acquisitionSource() });
+      setConflict(issue || ""); setSort(null); setReviewing(true); setInput("");
+      if (!isRefine) setScreenQuery(instruction);
+      trackEvent("screen_interpretation_ready", { refine: isRefine, filter_count: next.length, assumptions: (body.assumptions || []).length, source: acquisitionSource() });
     } catch (e: any) {
       const message = e?.message || "Could not interpret that screen.";
-      setError(message);
+      setError(message); setReviewBase(null); setPendingRefine(false);
       trackEvent("screen_run_error", { guest_run: runs + 1, source: acquisitionSource() });
     } finally { setLoading(false); }
   };
 
+  const confirmRun = () => {
+    if (!reviewing || conflict || runs >= 3) return;
+    const nextResults = runScreen(stocks, filters, ranking, 25);
+    trackEvent("screen_run_started", { guest_run: runs + 1, refine: pendingRefine, source: acquisitionSource() });
+    setResults(nextResults); setHasRun(true); setReviewing(false); setReviewBase(null); setPendingRefine(false);
+    setRuns((n) => n + 1); setSort(null);
+    trackEvent("screen_run_success", { guest_run: runs + 1, refine: pendingRefine, filter_count: filters.length, result_count: nextResults.length, source: acquisitionSource() });
+  };
+
+  const cancelReview = () => {
+    if (reviewBase) {
+      setFilters(reviewBase.filters); setRanking(reviewBase.ranking); setResults(reviewBase.results); setInterpretation(reviewBase.interpretation);
+      setAssumptions(reviewBase.assumptions); setConflict(reviewBase.conflict);
+    } else {
+      setFilters([]); setResults([]); setRanking("marketCap"); setInterpretation(""); setAssumptions([]); setConflict(""); setScreenQuery("");
+    }
+    setReviewing(false); setReviewBase(null); setPendingRefine(false); setAdding(false);
+  };
+
   const resetScreen = () => {
     setInput(""); setScreenQuery(""); setFilters([]); setResults([]); setRanking("marketCap"); setSort(null);
-    setInterpretation(""); setAssumptions([]); setConflict(""); setError(""); setHasRun(false); setAdding(false);
+    setInterpretation(""); setAssumptions([]); setConflict(""); setError(""); setHasRun(false); setReviewing(false); setReviewBase(null); setPendingRefine(false); setAdding(false);
   };
 
   const updateFilter = (id: string, patch: Partial<Filter>) => {
     const next = filters.map((f) => f.id === id ? { ...f, ...patch, source: "user" as const } : f);
     applyFilters(next);
-    trackEvent("screen_filter_edited", { filter_count: next.length });
+    trackEvent("screen_filter_edited", { filter_count: next.length, pre_run_review: reviewing });
   };
   const removeFilter = (id: string) => {
     const next = filters.filter((f) => f.id !== id);
     applyFilters(next);
-    trackEvent("screen_filter_removed", { filter_count: next.length });
+    trackEvent("screen_filter_removed", { filter_count: next.length, pre_run_review: reviewing });
   };
   const addFilter = (field: string, op: Filter["op"], value: number | string) => {
     const candidate: Filter = { id: nextId(field, op), field, op, value, source: "user" };
     const next = filters.some((f) => sameFilter(f, candidate)) ? filters : [...filters, candidate];
     applyFilters(next);
     setAdding(false);
-    trackEvent("screen_filter_added", { field, op, filter_count: next.length });
+    trackEvent("screen_filter_added", { field, op, filter_count: next.length, pre_run_review: reviewing });
   };
 
   const toggleSort = (col: keyof StockRow) => {
@@ -195,22 +224,24 @@ export default function TryPage() {
     <header style={{ borderBottom: `1px solid ${T.border}` }}><div style={{ maxWidth: 960, margin: "0 auto", padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><a href="/" style={{ color: T.ink, textDecoration: "none", fontFamily: DISP, fontWeight: 600, fontSize: 18 }}>Parse</a><div style={{ display: "flex", gap: 14, alignItems: "center" }}><a className="p-link" href="/screens">Screen ideas</a><a className="p-link" href="/methodology">How it works</a><a className="p-link" href="/account?mode=signin">Sign in</a></div></div></header>
     <main style={{ maxWidth: 960, margin: "0 auto", padding: "36px 24px 72px" }}>
       <section style={{ maxWidth: 760 }}>
-        <h1 style={{ fontFamily: DISP, fontSize: 28, margin: "0 0 6px", letterSpacing: "-0.02em" }}>{hasRun ? "Refine this screen" : "Describe the screen you want"}</h1>
-        <p style={{ color: T.inkSoft, fontSize: 14.5, margin: "0 0 16px" }}>{hasRun ? "Add or remove a criterion below. Edit a chip directly to change a number." : `Try three screen updates without creating an account. Current universe: ${universeLabel}, refreshed daily.`}</p>
-        <textarea className="p-query" value={input} onChange={(e) => setInput(e.target.value)} placeholder={hasRun ? "Example: also require revenue growth above 10%" : "Example: large companies with low P/E ratios"} onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); execute(); } }} />
-        <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}><span style={{ color: T.inkSoft, fontSize: 12.5 }}>{runs}/3 guest updates used</span><div style={{ display: "flex", gap: 8 }}>{hasRun && <button className="p-btn-neutral" onClick={resetScreen}>New screen</button>}<button className="p-btn" onClick={execute} disabled={!stocks.length || loading || limitReached || !input.trim()}>{loading ? "Reading…" : limitReached ? "Guest limit reached" : hasRun ? "Update screen" : "Run screen"}</button></div></div>
+        <h1 style={{ fontFamily: DISP, fontSize: 28, margin: "0 0 6px", letterSpacing: "-0.02em" }}>{reviewing ? "Review the interpretation" : hasRun ? "Refine this screen" : "Describe the screen you want"}</h1>
+        <p style={{ color: T.inkSoft, fontSize: 14.5, margin: "0 0 16px" }}>{reviewing ? "Check the filters below. Edit anything you disagree with, then run the verified screen." : hasRun ? "Add or remove a criterion below. Edit a chip directly to change a number." : `Try three screen runs without creating an account. Current universe: ${universeLabel}, refreshed daily.`}</p>
+        {!reviewing && <><textarea className="p-query" value={input} onChange={(e) => setInput(e.target.value)} placeholder={hasRun ? "Example: also require revenue growth above 10%" : "Example: large companies with low P/E ratios"} onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); execute(); } }} />
+        <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}><span style={{ color: T.inkSoft, fontSize: 12.5 }}>{runs}/3 guest screens run</span><div style={{ display: "flex", gap: 8 }}>{hasRun && <button className="p-btn-neutral" onClick={resetScreen}>New screen</button>}<button className="p-btn" onClick={execute} disabled={!stocks.length || loading || limitReached || !input.trim()}>{loading ? "Reading…" : limitReached ? "Guest limit reached" : hasRun ? "Interpret update" : "Interpret screen"}</button></div></div></>}
         {error && <div style={{ color: T.loss, marginTop: 10, fontSize: 13.5 }}>{error}</div>}
       </section>
 
-      {hasRun && <section style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: 18, marginTop: 24 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "baseline" }}><div style={{ fontSize: 12.5, fontWeight: 600, color: T.inkSoft }}>HOW PARSE READ THIS</div>{interpretation && <div style={{ color: T.inkFaint, fontSize: 13 }}>{interpretation}</div>}</div>
+      {(hasRun || reviewing) && <section style={{ background: T.surface, border: `1px solid ${reviewing ? "#C9CEF3" : T.border}`, borderRadius: 14, padding: 18, marginTop: 24 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "baseline" }}><div style={{ fontSize: 12.5, fontWeight: 600, color: reviewing ? T.accentInk : T.inkSoft }}>{reviewing ? "REVIEW BEFORE RUN" : "HOW PARSE READ THIS"}</div>{interpretation && <div style={{ color: T.inkFaint, fontSize: 13 }}>{interpretation}</div>}</div>
+        {reviewing && <div style={{ marginTop: 8, color: T.inkSoft, fontSize: 13.5 }}>Parse has not screened the universe yet. The filters below are the exact criteria that will be used.</div>}
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>{filters.map((f) => <FilterChip key={f.id} f={f} onEdit={updateFilter} onRemove={removeFilter} />)}<button className="p-btn-neutral" onClick={() => setAdding((v) => !v)}>+ Add filter</button></div>
         {adding && <AddFilter onAdd={addFilter} onCancel={() => setAdding(false)} />}
         {conflict && <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 9, background: "#FFF0EE", color: T.loss, fontSize: 13.5 }}>{conflict} Change or remove one of the filters.</div>}
         {assumptions.length > 0 && <div style={{ marginTop: 12, background: T.accentSoft, color: T.inkSoft, borderRadius: 9, padding: "10px 12px", fontSize: 13 }}>{assumptions.map((a, i) => <div key={i}>· {a}</div>)}</div>}
+        {reviewing && <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}><button className="p-btn-neutral" onClick={cancelReview}>Cancel</button><button className="p-btn" onClick={confirmRun} disabled={Boolean(conflict) || !stocks.length}>Run this screen</button></div>}
       </section>}
 
-      {hasRun && !conflict && <section style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: 18, marginTop: 16 }}>
+      {hasRun && !reviewing && !conflict && <section style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: 18, marginTop: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}><div style={{ fontFamily: DISP, fontSize: 18, fontWeight: 600 }}>{results.length} matches{sort ? ` · sorted ${sort.dir === "asc" ? "ascending" : "descending"}` : ""}</div><div style={{ display: "flex", gap: 9, alignItems: "center" }}><button className="p-btn-neutral" onClick={shareScreen}>Share screen</button>{shareNote && <span style={{ color: T.inkSoft, fontSize: 12.5 }}>{shareNote}</span>}</div></div>
         {results.length === 0 ? <div style={{ padding: "28px 4px", color: T.inkSoft, fontSize: 14 }}>No names match this screen. Loosen or remove a filter to widen it.</div> : <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", minWidth: 620 }}><thead><tr>
           <th aria-sort={ariaSort("symbol")} onClick={() => toggleSort("symbol")} style={headerStyle("left")}>Symbol{sortArrow("symbol")}</th>
@@ -225,7 +256,7 @@ export default function TryPage() {
         <div style={{ marginTop: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}><span style={{ color: T.inkSoft, fontSize: 13.5 }}>Research tool only; these are screen matches, not investment recommendations.</span><a href="/account?mode=signup" className="p-link">Create account to save →</a></div>
       </section>}
 
-      {limitReached && <section style={{ marginTop: 18, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: 18 }}><div style={{ fontFamily: DISP, fontWeight: 600, fontSize: 18, marginBottom: 6 }}>Continue with an account</div><div style={{ color: T.inkSoft, fontSize: 14, marginBottom: 12 }}>Create an account to keep screening and save screens for later.</div><a href="/account?mode=signup" className="p-link">Create account →</a></section>}
+      {limitReached && !reviewing && <section style={{ marginTop: 18, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: 18 }}><div style={{ fontFamily: DISP, fontWeight: 600, fontSize: 18, marginBottom: 6 }}>Continue with an account</div><div style={{ color: T.inkSoft, fontSize: 14, marginBottom: 12 }}>Create an account to keep screening and save screens for later.</div><a href="/account?mode=signup" className="p-link">Create account →</a></section>}
     </main>
   </div>;
 }
@@ -237,6 +268,7 @@ function formatMetricCell(col: keyof StockRow, value: any) {
   if (meta?.unit === "%") return `${Number(value).toFixed(1)}%`;
   if (meta?.unit === "×") return `${Number(value).toFixed(1)}×`;
   if (meta?.unit === "$B") return `$${Number(value).toFixed(1)}B`;
+  if (meta?.unit === "M sh/day") return `${Number(value).toFixed(2)}M`;
   return Number(value).toFixed(2);
 }
 
@@ -245,7 +277,8 @@ function FilterChip({ f, onEdit, onRemove }: { f: Filter; onEdit: (id: string, p
   const sector = meta?.kind === "cat";
   const displayOp = sector ? (f.op === "in" ? "is one of" : f.op === "!=" ? "is not" : "is") : f.op;
   const displayValue = sector && f.op === "in" ? String(f.value).split("|").join(" or ") : String(f.value);
-  return <div style={{ display: "inline-flex", alignItems: "center", gap: 6, border: `1px solid ${f.source === "user" ? "#C9CEF3" : T.border}`, background: f.source === "user" ? T.accentSoft : T.surfaceAlt, borderRadius: 9, padding: "6px 8px" }}>
+  return <div style={{ display: "inline-flex", alignItems: "center", gap: 6, border: `1px solid ${f.source === "user" ? "#C9CEF3" : f.source === "default" ? "#BFC4E8" : T.border}`, background: f.source === "user" ? T.accentSoft : T.surfaceAlt, borderRadius: 9, padding: "6px 8px" }}>
+    {f.source === "default" && <a href="/methodology#documented-defaults" title="See why Parse uses this default" style={{ color: T.accentInk, textDecoration: "underline", textUnderlineOffset: 2, fontSize: 10.5, fontWeight: 650, textTransform: "uppercase", letterSpacing: ".03em" }}>documented default</a>}
     <span style={{ fontFamily: MONO, fontSize: 12.5 }}>{meta?.label || f.field} {displayOp}</span>
     {sector ? <span style={{ fontFamily: MONO, fontSize: 12.5 }}>{displayValue}</span> : <input type="number" value={String(f.value)} onChange={(e) => onEdit(f.id, { value: e.target.value === "" ? "" : Number(e.target.value) })} style={{ width: 62, border: `1px solid ${T.border}`, borderRadius: 6, padding: "3px 5px", fontFamily: MONO, fontSize: 12.5 }} />}
     <button onClick={() => onRemove(f.id)} aria-label="Remove filter" style={{ border: 0, background: "transparent", color: T.inkSoft, padding: 0 }}>×</button>
@@ -266,7 +299,7 @@ function AddFilter({ onAdd, onCancel }: { onAdd: (field: string, op: Filter["op"
   };
   return <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 7, alignItems: "center", padding: 10, background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 10 }}>
     <select value={field} onChange={(e) => { const next = e.target.value; setField(next); setOp(FIELDS[next]?.kind === "cat" ? "==" : "<"); }} style={{ padding: "5px 7px", borderRadius: 7, border: `1px solid ${T.border}` }}>{Object.values(FIELDS).map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}</select>
-    {categorical ? <><select value={op} onChange={(e) => setOp(e.target.value as Filter["op"])} style={{ padding: "5px 7px", borderRadius: 7, border: `1px solid ${T.border}` }}><option value="==">is</option><option value="!=">is not</option></select><select value={sector} onChange={(e) => setSector(e.target.value)} style={{ padding: "5px 7px", borderRadius: 7, border: `1px solid ${T.border}` }}>{SECTORS.map((s) => <option key={s}>{s}</option>)}</select></> : <><select value={op} onChange={(e) => setOp(e.target.value as Filter["op"])} style={{ padding: "5px 7px", borderRadius: 7, border: `1px solid ${T.border}` }}>{["<", "<=", ">", ">=", "=="].map((o) => <option key={o}>{o}</option>)}</select><input type="number" value={value} onChange={(e) => setValue(e.target.value)} placeholder="Value" style={{ width: 78, padding: "5px 7px", borderRadius: 7, border: `1px solid ${T.border}` }} /></>}
+    {categorical ? <><select value={op} onChange={(e) => setOp(e.target.value as Filter["op"])} style={{ padding: "5px 7px", borderRadius: 7, border: `1px solid ${T.border}` }}><option value="==">is</option><option value="!=">is not</option></select><select value={sector} onChange={(e) => setSector(e.target.value)} style={{ padding: "5px 7px", borderRadius: 7, border: `1px solid ${T.border}` }}>{SECTORS.map((s) => <option key={s}>{s}</option>)}</select></> : <><select value={op} onChange={(e) => setOp(e.target.value as Filter["op"])} style={{ padding: "5px 7px", borderRadius: 7, border: `1px solid ${T.border}` }}>{["<", "<=", ">", ">=", "=="].map((o) => <option key={o}>{o}</option>)}</select><input type="number" value={value} onChange={(e) => setValue(e.target.value)} placeholder={meta?.unit === "M sh/day" ? "Millions" : "Value"} style={{ width: 78, padding: "5px 7px", borderRadius: 7, border: `1px solid ${T.border}` }} /></>}
     <button className="p-btn-neutral" onClick={submit}>Add</button><button onClick={onCancel} style={{ border: 0, background: "transparent", color: T.inkSoft }}>Cancel</button>
   </div>;
 }

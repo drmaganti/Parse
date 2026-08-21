@@ -24,6 +24,7 @@ export const FIELDS: Record<string, FieldMeta> = {
   payoutRatio: { key: "payoutRatio", col: "payout_ratio", label: "Payout ratio", kind: "num", unit: "%" },
   beta:        { key: "beta",        col: "beta",          label: "Beta",       kind: "num" },
   marketCap:   { key: "marketCap",   col: "market_cap",    label: "Market cap", kind: "num", unit: "$B" },
+  avgVolume20d:{ key: "avgVolume20d", col: "avg_volume_20d", label: "Avg volume (20D)", kind: "num", unit: "M sh/day" },
   revGrowth:   { key: "revGrowth",   col: "rev_growth",    label: "Rev growth", kind: "num", unit: "%" },
   roic:        { key: "roic",        col: "roic",              label: "ROIC (FY)",          kind: "num", unit: "%" },
   roe:         { key: "roe",         col: "roe",               label: "ROE (TTM)",          kind: "num", unit: "%" },
@@ -69,6 +70,7 @@ export interface StockRow {
   sector: string | null;
   price: number | null;
   market_cap: number | null;
+  avg_volume_20d: number | null;
   pe: number | null;
   forward_pe: number | null;
   pb: number | null;

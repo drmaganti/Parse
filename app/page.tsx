@@ -109,6 +109,7 @@ function Screener({ user }: { user: UserState }) {
   const [dataAsOf, setDataAsOf] = useState("");
   const [loading, setLoading] = useState(false);
   const [hasRun, setHasRun] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
   const [saved, setSaved] = useState<SavedRow[]>([]);
   const [activeSavedId, setActiveSavedId] = useState<string | null>(null);
   const [preferences, setPreferences] = useState<PreferenceRow[]>(() => readPreferences(user.metadata));
@@ -151,7 +152,7 @@ function Screener({ user }: { user: UserState }) {
         setInterp("Restored a shared screen.");
         const issue = findFilterConflict(dec.filters); setConflict(issue || "");
         setResults(issue ? [] : runScreen(rows as StockRow[], dec.filters, dec.ranking, Infinity));
-        setHasRun(true);
+        setHasRun(true); setReviewing(false);
       }
     })();
   }, []);
@@ -164,7 +165,7 @@ function Screener({ user }: { user: UserState }) {
         setScreenQuery(dec.q);
         const issue = findFilterConflict(dec.filters); setConflict(issue || "");
         setFilters(dec.filters); setRanking(dec.ranking); setInterp("Restored a previous screen."); setAssumptions([]);
-        setResults(issue ? [] : runScreen(stocksRef.current, dec.filters, dec.ranking, Infinity)); setHasRun(true); setSort(null);
+        setResults(issue ? [] : runScreen(stocksRef.current, dec.filters, dec.ranking, Infinity)); setHasRun(true); setReviewing(false); setSort(null);
       }
     };
     window.addEventListener("popstate", onPop);
@@ -173,41 +174,52 @@ function Screener({ user }: { user: UserState }) {
 
   const parseInput = useCallback(async () => {
     const instruction = input.trim();
-    if (!instruction || loading) return;
+    if (!instruction || loading || reviewing) return;
     setLoading(true);
+    const isRefine = hasRun;
+    trackEvent("screen_interpretation_started", { refine: isRefine });
     try {
-      const mode = hasRun ? "refine" : "new";
+      const mode = isRefine ? "refine" : "new";
       const res = await fetch("/api/parse", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: instruction, filters: hasRun ? filters : [], ranking, mode }),
+        body: JSON.stringify({ query: instruction, filters: isRefine ? filters : [], ranking, mode }),
       });
       const r = await res.json();
       if (!res.ok || r?.error) { flash(r?.error || "Could not update the screen."); return; }
 
       let next = (r.filters || []) as Filter[];
       const nextRanking = r.ranking || ranking;
-      const nextQuery = hasRun ? screenQuery : instruction;
-      if (!hasRun) next = mergeDefaults(next, defaultFilters());
+      const nextQuery = isRefine ? screenQuery : instruction;
+      if (!isRefine) next = mergeDefaults(next, defaultFilters());
       const issue = findFilterConflict(next);
       setFilters(next); setRanking(nextRanking); setInterp(r.interpretation || ""); setAssumptions(r.assumptions || []);
-      setConflict(issue || ""); setResults(issue ? [] : runScreen(stocks, next, nextRanking, Infinity));
-      setHasRun(true); setSort(null); setShowAll(false); setScreenQuery(nextQuery); setInput("");
-      syncUrl(nextQuery, next, nextRanking, true);
+      setConflict(issue || ""); setSort(null); setShowAll(false); setScreenQuery(nextQuery); setInput(""); setReviewing(true);
+      trackEvent("screen_interpretation_ready", { refine: isRefine, filter_count: next.length, assumptions: (r.assumptions || []).length });
     } catch {
       flash("The parse service didn't respond.");
     } finally { setLoading(false); }
-  }, [input, loading, hasRun, filters, ranking, screenQuery, stocks, defaultFilters]);
+  }, [input, loading, reviewing, hasRun, filters, ranking, screenQuery, defaultFilters]);
+
+  const confirmScreen = () => {
+    if (!reviewing || conflict) return;
+    const nextResults = runScreen(stocks, filters, ranking, Infinity);
+    setResults(nextResults); setHasRun(true); setReviewing(false); setSort(null); setShowAll(false);
+    syncUrl(screenQuery, filters, ranking, true);
+    trackEvent("screen_run_success", { filter_count: filters.length, result_count: nextResults.length, confirmed_interpretation: true });
+  };
 
   const resetScreen = () => {
     setInput(""); setScreenQuery(""); setFilters([]); setRanking("marketCap"); setInterp(""); setAssumptions([]);
-    setResults([]); setSort(null); setShowAll(false); setHasRun(false); setConflict(""); setActiveSavedId(null);
+    setResults([]); setSort(null); setShowAll(false); setHasRun(false); setReviewing(false); setConflict(""); setActiveSavedId(null);
     window.history.pushState({}, "", window.location.pathname);
   };
 
   const recompute = (fs: Filter[], rk = ranking) => {
     const issue = findFilterConflict(fs); setConflict(issue || "");
-    setResults(issue ? [] : runScreen(stocks, fs, rk, Infinity)); setShowAll(false); setSort(null);
-    if (hasRun) syncUrl(screenQuery, fs, rk, false);
+    if (!reviewing) {
+      setResults(issue ? [] : runScreen(stocks, fs, rk, Infinity)); setShowAll(false); setSort(null);
+      if (hasRun) syncUrl(screenQuery, fs, rk, false);
+    }
   };
 
   const editFilter = (id: string, patch: Partial<Filter>) => {
@@ -249,9 +261,7 @@ function Screener({ user }: { user: UserState }) {
     const pref = preferences.find((p) => p.id === id);
     const nextPreferences = preferences.filter((p) => p.id !== id);
     if (!(await persistPreferences(nextPreferences))) return flash("Could not remove that default.");
-    if (pref) {
-      setFilters((fs) => fs.map((f) => f.source === "default" && sameFilter(f, pref) ? { ...f, source: "user" as const } : f));
-    }
+    if (pref) setFilters((fs) => fs.map((f) => f.source === "default" && sameFilter(f, pref) ? { ...f, source: "user" as const } : f));
     flash("Default removed.");
   };
 
@@ -274,7 +284,7 @@ function Screener({ user }: { user: UserState }) {
   const toggleSort = (col: keyof StockRow) => setSort((cur) => (!cur || cur.col !== col ? { col, dir: "desc" } : cur.dir === "desc" ? { col, dir: "asc" } : null));
 
   const saveScreen = async () => {
-    if (!hasRun) return flash("Build a screen first, then save it.");
+    if (!hasRun || reviewing) return flash("Confirm and run the screen first.");
     const existing = activeSavedId ? saved.find((s) => s.id === activeSavedId) : undefined;
     const name = existing?.name || screenQuery.trim().slice(0, 60) || "Untitled screen";
     const now = new Date().toISOString();
@@ -299,7 +309,7 @@ function Screener({ user }: { user: UserState }) {
     const issue = findFilterConflict(rec.filters); setConflict(issue || "");
     const nextResults = issue ? [] : runScreen(stocks, rec.filters, rec.ranking, Infinity);
     setFilters(rec.filters); setRanking(rec.ranking); setInterp("Loaded a saved screen.");
-    setResults(nextResults); setHasRun(true); setSort(null); setShowAll(false); syncUrl(rec.query || rec.name, rec.filters, rec.ranking, true);
+    setResults(nextResults); setHasRun(true); setReviewing(false); setSort(null); setShowAll(false); syncUrl(rec.query || rec.name, rec.filters, rec.ranking, true);
     const symbols = nextResults.map((r) => r.symbol);
     const fingerprint = screenFingerprint(rec.filters, rec.ranking, rec.universe || "default");
     const comparable = rec.criteriaFingerprint === fingerprint && rec.lastResultSymbols.length > 0;
@@ -320,7 +330,7 @@ function Screener({ user }: { user: UserState }) {
   };
   const deleteScreen = async (id: string) => { await supabase.from("saved_screens").delete().eq("id", id); setSaved((prev) => prev.filter((s) => s.id !== id)); if (activeSavedId === id) setActiveSavedId(null); };
   const createSharedScreen = async (visibility: "unlisted" | "public") => {
-    if (!hasRun) return;
+    if (!hasRun || reviewing) return flash("Confirm and run the screen first.");
     const title = saved.find((s) => s.id === activeSavedId)?.name || screenQuery.trim().slice(0, 80) || "Stock screen";
     const slug = `${screenSlug(title)}-${(globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)).slice(0, 8)}`;
     const { error } = await supabase.from("shared_screens").insert({ owner_id: user.id, source_saved_screen_id: activeSavedId, slug, title, query: screenQuery, filters, ranking, universe: "default", visibility });
@@ -335,18 +345,18 @@ function Screener({ user }: { user: UserState }) {
     <TopBar email={user.email} onSignOut={() => supabase.auth.signOut()} />
     <main style={{ maxWidth: 1120, margin: "0 auto", padding: "30px 24px 80px" }}>
       <section>
-        <h1 className="disp" style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.02em", margin: "0 0 5px" }}>{hasRun ? "Refine this screen" : "Describe the screen you want"}</h1>
-        <p style={{ color: T.inkSoft, fontSize: 14.5, margin: "0 0 16px" }}>{hasRun ? "Add or remove criteria in the same box. Edit a chip directly to change a threshold." : "Plain English becomes explicit filters you can inspect and edit."}</p>
-        <QueryBar value={input} onChange={setInput} onSubmit={parseInput} loading={loading} hasRun={hasRun} onNew={resetScreen} />
+        <h1 className="disp" style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.02em", margin: "0 0 5px" }}>{reviewing ? "Review the interpretation" : hasRun ? "Refine this screen" : "Describe the screen you want"}</h1>
+        <p style={{ color: T.inkSoft, fontSize: 14.5, margin: "0 0 16px" }}>{reviewing ? "Check every filter below. Adjust anything you disagree with, then run the verified screen." : hasRun ? "Add or remove criteria in the same box. Edit a chip directly to change a threshold." : "Plain English becomes explicit filters you can inspect and edit before screening."}</p>
+        {!reviewing && <QueryBar value={input} onChange={setInput} onSubmit={parseInput} loading={loading} hasRun={hasRun} onNew={resetScreen} />}
         {dataErr && <div style={{ marginTop: 12, color: T.loss, fontSize: 13.5 }}>{dataErr}</div>}
-        {!dataErr && stocks.length > 0 && <div style={{ marginTop: 11, fontSize: 12.5, color: T.inkFaint }}>S&amp;P 500 and Nasdaq 100 · refreshed daily</div>}
+        {!dataErr && stocks.length > 0 && <div style={{ marginTop: 11, fontSize: 12.5, color: T.inkFaint }}>S&amp;P 500 and Nasdaq 100 · refreshed daily · issuer-deduplicated</div>}
       </section>
 
-      {hasRun && <section style={{ marginTop: 22 }}><Echo filters={filters} ranking={ranking} interp={interp} assumptions={assumptions} conflict={conflict}
+      {(hasRun || reviewing) && <section style={{ marginTop: 22 }}><Echo filters={filters} ranking={ranking} interp={interp} assumptions={assumptions} conflict={conflict}
         onEdit={editFilter} onRemove={removeFilter} onRanking={changeRanking} onAdd={addFilter}
-        onSaveDefault={saveDefault} preferencesReady={preferencesReady} /></section>}
+        onSaveDefault={saveDefault} preferencesReady={preferencesReady} reviewing={reviewing} onConfirm={confirmScreen} onStartOver={resetScreen} /></section>}
 
-      {hasRun && !conflict && <section style={{ marginTop: 22 }}><Results rows={displayed} total={total} filters={filters} ranking={ranking} sort={sort} onSort={toggleSort}
+      {hasRun && !reviewing && !conflict && <section style={{ marginTop: 22 }}><Results rows={displayed} total={total} filters={filters} ranking={ranking} sort={sort} onSort={toggleSort}
         showAll={showAll} onToggleShowAll={() => setShowAll((v) => !v)} dataAsOf={dataAsOf} onSave={saveScreen} saveLabel={activeSavedId ? "Update saved screen" : "Save screen"} onShare={() => createSharedScreen("unlisted")} onPublish={() => createSharedScreen("public")} /></section>}
 
       <section style={{ marginTop: 30 }}><Saved saved={saved} onLoad={loadScreen} onDelete={deleteScreen} onRename={renameScreen} /></section>
@@ -369,22 +379,24 @@ function QueryBar({ value, onChange, onSubmit, loading, hasRun, onNew }: { value
   const taRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => { if (value || hasRun) return; const t = window.setInterval(() => setIdx((i) => (i + 1) % EXAMPLES.length), 3400); return () => window.clearInterval(t); }, [value, hasRun]);
   const grow = () => { const el = taRef.current; if (!el) return; el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 120) + "px"; };
-  return <div><div className="cmdbar"><span style={{ color: T.inkFaint, display: "flex", flexShrink: 0 }} aria-hidden><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.7" /><path d="M20 20l-3.2-3.2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg></span><div className="cmd-field">{!value && <span key={hasRun ? "refine" : idx} className="ph-loop">{hasRun ? "Add or remove a criterion…" : EXAMPLES[idx]}</span>}<textarea ref={taRef} value={value} rows={1} aria-label={hasRun ? "Refine the current screen" : "Describe the screen you want"} onChange={(e) => { onChange(e.target.value); grow(); }} onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onSubmit(); } }} /></div><button className="btn btn-primary" onClick={onSubmit} disabled={loading || !value.trim()}>{loading ? "Reading…" : hasRun ? "Update screen" : "Run"}</button></div>{hasRun && <div className="screen-actions" style={{ display: "flex", justifyContent: "flex-end", marginTop: 9 }}><button className="btn btn-neutral btn-sm" onClick={onNew}>New screen</button></div>}</div>;
+  return <div><div className="cmdbar"><span style={{ color: T.inkFaint, display: "flex", flexShrink: 0 }} aria-hidden><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.7" /><path d="M20 20l-3.2-3.2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg></span><div className="cmd-field">{!value && <span key={hasRun ? "refine" : idx} className="ph-loop">{hasRun ? "Add or remove a criterion…" : EXAMPLES[idx]}</span>}<textarea ref={taRef} value={value} rows={1} aria-label={hasRun ? "Refine the current screen" : "Describe the screen you want"} onChange={(e) => { onChange(e.target.value); grow(); }} onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onSubmit(); } }} /></div><button className="btn btn-primary" onClick={onSubmit} disabled={loading || !value.trim()}>{loading ? "Reading…" : hasRun ? "Interpret update" : "Interpret"}</button></div>{hasRun && <div className="screen-actions" style={{ display: "flex", justifyContent: "flex-end", marginTop: 9 }}><button className="btn btn-neutral btn-sm" onClick={onNew}>New screen</button></div>}</div>;
 }
 
-function Echo({ filters, ranking, interp, assumptions, conflict, onEdit, onRemove, onRanking, onAdd, onSaveDefault, preferencesReady }: {
+function Echo({ filters, ranking, interp, assumptions, conflict, onEdit, onRemove, onRanking, onAdd, onSaveDefault, preferencesReady, reviewing, onConfirm, onStartOver }: {
   filters: Filter[]; ranking: string; interp: string; assumptions: string[]; conflict: string;
   onEdit: (id: string, patch: Partial<Filter>) => void; onRemove: (id: string) => void; onRanking: (rk: string) => void;
   onAdd: (field: string, op: Filter["op"], value: number | string) => void; onSaveDefault: (f: Filter) => void; preferencesReady: boolean;
+  reviewing: boolean; onConfirm: () => void; onStartOver: () => void;
 }) {
-  return <section style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: "18px 18px 20px" }}><div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}><div style={{ fontSize: 13, fontWeight: 600, color: T.inkSoft }}>HOW THIS WAS READ</div>{interp && <div style={{ fontSize: 13, color: T.inkFaint }}>{interp}</div>}</div><div style={{ display: "flex", flexWrap: "wrap", gap: 9, marginTop: 15, alignItems: "center" }}>{filters.length === 0 && <span style={{ color: T.inkFaint, fontSize: 14 }}>No filters. Add one below or type another instruction.</span>}{filters.map((f) => <Chip key={f.id} f={f} onEdit={onEdit} onRemove={onRemove} onSaveDefault={onSaveDefault} preferencesReady={preferencesReady} />)}<AddFilter onAdd={onAdd} /></div><div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 18, flexWrap: "wrap" }}><span style={{ fontSize: 13, color: T.inkSoft }}>Rank by</span><select value={ranking} onChange={(e) => onRanking(e.target.value)} style={{ fontSize: 13.5, padding: "6px 10px", borderRadius: 9, border: `1px solid ${T.border}`, background: T.surfaceAlt, color: T.ink }}>{Object.values(RANKINGS).map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}</select><span style={{ marginLeft: "auto", fontSize: 12.5, color: T.inkFaint }}>Direct edits are preserved when you update the screen.</span></div>{conflict && <div style={{ marginTop: 14, padding: "11px 13px", background: "#FFF0EE", borderRadius: 10, color: T.loss, fontSize: 13.5 }}>{conflict} Change or remove one of the filters.</div>}{assumptions.length > 0 && <div style={{ marginTop: 14, padding: "11px 13px", background: T.accentSoft, borderRadius: 10, fontSize: 13.5, color: T.accentInk }}>{assumptions.map((a, i) => <div key={i}>· {a}</div>)}</div>}</section>;
+  const hasDocumentedDefault = assumptions.some((a) => /documented|parse(?:'s)? default/i.test(a));
+  return <section style={{ background: T.surface, border: `1px solid ${reviewing ? "#C9CEF3" : T.border}`, borderRadius: 14, padding: "18px 18px 20px" }}><div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}><div style={{ fontSize: 13, fontWeight: 600, color: reviewing ? T.accentInk : T.inkSoft }}>{reviewing ? "REVIEW BEFORE RUN" : "HOW THIS WAS READ"}</div>{interp && <div style={{ fontSize: 13, color: T.inkFaint }}>{interp}</div>}</div>{reviewing && <div style={{ marginTop: 8, color: T.inkSoft, fontSize: 13.5 }}>The universe has not been screened with this interpretation yet. The chips below are the exact criteria that will run.</div>}<div style={{ display: "flex", flexWrap: "wrap", gap: 9, marginTop: 15, alignItems: "center" }}>{filters.length === 0 && <span style={{ color: T.inkFaint, fontSize: 14 }}>No filters. Add one below or start over.</span>}{filters.map((f) => <Chip key={f.id} f={f} onEdit={onEdit} onRemove={onRemove} onSaveDefault={onSaveDefault} preferencesReady={preferencesReady} />)}<AddFilter onAdd={onAdd} /></div><div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 18, flexWrap: "wrap" }}><span style={{ fontSize: 13, color: T.inkSoft }}>Rank by</span><select value={ranking} onChange={(e) => onRanking(e.target.value)} style={{ fontSize: 13.5, padding: "6px 10px", borderRadius: 9, border: `1px solid ${T.border}`, background: T.surfaceAlt, color: T.ink }}>{Object.values(RANKINGS).map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}</select><span style={{ marginLeft: "auto", fontSize: 12.5, color: T.inkFaint }}>{reviewing ? "Edit anything you disagree with before running." : "Direct edits are preserved when you update the screen."}</span></div>{conflict && <div style={{ marginTop: 14, padding: "11px 13px", background: "#FFF0EE", borderRadius: 10, color: T.loss, fontSize: 13.5 }}>{conflict} Change or remove one of the filters.</div>}{assumptions.length > 0 && <div style={{ marginTop: 14, padding: "11px 13px", background: T.accentSoft, borderRadius: 10, fontSize: 13.5, color: T.accentInk }}>{assumptions.map((a, i) => <div key={i}>· {a}</div>)}{hasDocumentedDefault && <div style={{ marginTop: 8 }}><a href="/methodology#documented-defaults" style={{ color: T.accentInk, fontWeight: 600 }}>See documented defaults →</a></div>}</div>}{reviewing && <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end", gap: 8 }}><button className="btn btn-neutral btn-sm" onClick={onStartOver}>Start over</button><button className="btn btn-primary" onClick={onConfirm} disabled={Boolean(conflict)}>Run this screen</button></div>}</section>;
 }
 
 function Chip({ f, onEdit, onRemove, onSaveDefault, preferencesReady }: { f: Filter; onEdit: (id: string, p: Partial<Filter>) => void; onRemove: (id: string) => void; onSaveDefault: (f: Filter) => void; preferencesReady: boolean }) {
   const [editing, setEditing] = useState(false);
   const meta = FIELDS[f.field] || { label: f.field, unit: undefined, kind: "num" as const };
   const isUser = f.source === "user"; const isDefault = f.source === "default";
-  const display = meta.kind === "cat" ? `${meta.label} ${f.op === "in" ? "is one of" : f.op === "!=" ? "is not" : "is"} ${f.op === "in" ? String(f.value).split("|").join(" or ") : f.value}` : `${meta.label} ${f.op} ${f.value}${meta.unit === "%" ? "%" : ""}`;
+  const display = meta.kind === "cat" ? `${meta.label} ${f.op === "in" ? "is one of" : f.op === "!=" ? "is not" : "is"} ${f.op === "in" ? String(f.value).split("|").join(" or ") : f.value}` : `${meta.label} ${f.op} ${f.value}${meta.unit === "%" ? "%" : meta.unit === "M sh/day" ? "M sh/day" : ""}`;
   return <span style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "7px 9px 7px 11px", borderRadius: 9, fontSize: 13.5, background: isDefault ? "#F7F7FC" : isUser ? T.accentSoft : T.surfaceAlt, border: `1px solid ${isDefault ? "#BFC4E8" : isUser ? "#C9CEF3" : T.border}`, color: isUser ? T.accentInk : T.ink }}>
     {isDefault && <span style={{ fontSize: 10.5, color: T.accentInk, fontWeight: 650, textTransform: "uppercase", letterSpacing: ".04em" }}>Default</span>}
     {editing && meta.kind === "num" ? <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><select value={f.op} onChange={(e) => onEdit(f.id, { op: e.target.value as Filter["op"] })} style={{ border: `1px solid ${T.border}`, borderRadius: 6, padding: "2px 3px" }}>{["<", "<=", ">", ">=", "=="].map((o) => <option key={o}>{o}</option>)}</select><input autoFocus type="number" value={String(f.value)} onChange={(e) => onEdit(f.id, { value: e.target.value === "" ? "" : Number(e.target.value) })} onBlur={() => setEditing(false)} onKeyDown={(e) => e.key === "Enter" && setEditing(false)} style={{ width: 66, border: `1px solid ${T.border}`, borderRadius: 6, padding: "2px 6px" }} /></span> : <button className="mono" onClick={() => meta.kind === "num" && setEditing(true)} style={{ background: "none", border: "none", padding: 0, color: "inherit", fontSize: 13, cursor: meta.kind === "num" ? "pointer" : "default" }}>{display}</button>}
@@ -398,12 +410,12 @@ function AddFilter({ onAdd }: { onAdd: (field: string, op: Filter["op"], value: 
   const meta = FIELDS[field]; const categorical = meta.kind === "cat";
   const submit = () => { if (categorical) { onAdd(field, op === "!=" ? "!=" : "==", sector); setOpen(false); return; } if (value === "" || !Number.isFinite(Number(value))) return; onAdd(field, op, Number(value)); setValue(""); setOpen(false); };
   if (!open) return <button className="btn btn-neutral btn-sm" onClick={() => setOpen(true)}>+ Add filter</button>;
-  return <span style={{ display: "inline-flex", alignItems: "center", gap: 5, flexWrap: "wrap", padding: "6px 7px", borderRadius: 9, background: T.surfaceAlt, border: `1px solid ${T.borderStrong}` }}><select value={field} onChange={(e) => { const next = e.target.value; setField(next); setOp(FIELDS[next].kind === "cat" ? "==" : "<"); }} style={{ border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px" }}>{Object.values(FIELDS).map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}</select>{categorical ? <><select value={op} onChange={(e) => setOp(e.target.value as Filter["op"])} style={{ border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px" }}><option value="==">is</option><option value="!=">is not</option></select><select value={sector} onChange={(e) => setSector(e.target.value)} style={{ border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px" }}>{SECTORS.map((s) => <option key={s}>{s}</option>)}</select></> : <><select value={op} onChange={(e) => setOp(e.target.value as Filter["op"])} style={{ border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px" }}>{["<", "<=", ">", ">=", "=="].map((o) => <option key={o}>{o}</option>)}</select><input type="number" value={value} onChange={(e) => setValue(e.target.value)} placeholder={meta.unit === "%" ? "%" : "0"} onKeyDown={(e) => e.key === "Enter" && submit()} style={{ width: 68, border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px 6px" }} /></>}<button className="btn btn-primary btn-sm" onClick={submit}>Add</button><button onClick={() => setOpen(false)} style={{ background: "none", border: "none", color: T.inkFaint }}>×</button></span>;
+  return <span style={{ display: "inline-flex", alignItems: "center", gap: 5, flexWrap: "wrap", padding: "6px 7px", borderRadius: 9, background: T.surfaceAlt, border: `1px solid ${T.borderStrong}` }}><select value={field} onChange={(e) => { const next = e.target.value; setField(next); setOp(FIELDS[next].kind === "cat" ? "==" : "<"); }} style={{ border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px" }}>{Object.values(FIELDS).map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}</select>{categorical ? <><select value={op} onChange={(e) => setOp(e.target.value as Filter["op"])} style={{ border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px" }}><option value="==">is</option><option value="!=">is not</option></select><select value={sector} onChange={(e) => setSector(e.target.value)} style={{ border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px" }}>{SECTORS.map((s) => <option key={s}>{s}</option>)}</select></> : <><select value={op} onChange={(e) => setOp(e.target.value as Filter["op"])} style={{ border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px" }}>{["<", "<=", ">", ">=", "=="].map((o) => <option key={o}>{o}</option>)}</select><input type="number" value={value} onChange={(e) => setValue(e.target.value)} placeholder={meta.unit === "%" ? "%" : meta.unit === "M sh/day" ? "Millions" : "0"} onKeyDown={(e) => e.key === "Enter" && submit()} style={{ width: 68, border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px 6px" }} /></>}<button className="btn btn-primary btn-sm" onClick={submit}>Add</button><button onClick={() => setOpen(false)} style={{ background: "none", border: "none", color: T.inkFaint }}>×</button></span>;
 }
 
 function Results({ rows, total, filters, ranking, sort, onSort, showAll, onToggleShowAll, dataAsOf, onSave, saveLabel, onShare, onPublish }: { rows: ScreenResult[]; total: number; filters: Filter[]; ranking: string; sort: { col: keyof StockRow; dir: "asc" | "desc" } | null; onSort: (c: keyof StockRow) => void; showAll: boolean; onToggleShowAll: () => void; dataAsOf: string; onSave: () => void; saveLabel: string; onShare: () => void; onPublish: () => void }) {
   const cols = buildColumns(filters, ranking); const activeCols = new Set(filters.map((f) => FIELDS[f.field]?.col).filter(Boolean) as string[]); const arrow = (k: keyof StockRow) => sort?.col === k ? (sort.dir === "asc" ? " ↑" : " ↓") : "";
-  return <section><div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 10 }}><div style={{ display: "flex", alignItems: "baseline", gap: 10 }}><h2 className="disp" style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Results</h2><span className="mono" style={{ fontSize: 13, color: T.inkFaint }}>{total > rows.length ? `top ${rows.length} of ${total}` : `${total} names`} · {sort ? "manual sort" : (RANKINGS[ranking]?.label.toLowerCase() || "")}</span></div><div style={{ display: "flex", gap: 8 }}><button onClick={onShare} className="btn btn-ghost btn-sm">Share</button><button onClick={onPublish} className="btn btn-ghost btn-sm">Publish</button><button onClick={onSave} className="btn btn-secondary btn-sm">{saveLabel}</button></div></div>{rows.length === 0 ? <Empty title="No names match this screen." body="Loosen or remove a filter to widen it." /> : <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}><div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: 640 }}><thead><tr style={{ borderBottom: `1px solid ${T.border}` }}><Th style={{ textAlign: "left", paddingLeft: 16 }}>Ticker</Th><Th style={{ textAlign: "left" }}>Company</Th>{cols.map((c) => <Th key={String(c.key)} style={{ textAlign: "right" }} hot={activeCols.has(c.key as string)} onClick={() => onSort(c.key)}>{c.label}{arrow(c.key)}</Th>)}<Th style={{ textAlign: "right", paddingRight: 16 }} onClick={() => onSort("chg_1w")}>1W{arrow("chg_1w")}</Th></tr></thead><tbody>{rows.map((s) => <tr key={s.symbol} className="row-hover" style={{ borderBottom: `1px solid ${T.border}` }}><td className="mono" style={{ fontWeight: 600, padding: "11px 8px 11px 16px" }}>{s.symbol}</td><td style={{ padding: "11px 8px" }}>{s.name} <span style={{ color: T.inkFaint, fontSize: 12 }}>· {s.sector ?? "—"}</span></td>{cols.map((c) => <td key={String(c.key)} className="mono" style={{ textAlign: "right", padding: "11px 8px", color: activeCols.has(c.key as string) ? T.ink : T.inkSoft, fontWeight: activeCols.has(c.key as string) ? 600 : 400 }}>{c.fmt(s[c.key])}</td>)}<td className="mono" style={{ textAlign: "right", padding: "11px 16px 11px 8px", color: (s.chg_1w ?? 0) >= 0 ? T.gain : T.loss }}>{s.chg_1w == null ? "—" : `${s.chg_1w >= 0 ? "+" : ""}${s.chg_1w.toFixed(1)}%`}</td></tr>)}</tbody></table></div>{total > 25 && <button onClick={onToggleShowAll} style={{ width: "100%", padding: "11px 16px", background: T.surfaceAlt, border: "none", borderTop: `1px solid ${T.border}`, fontSize: 13, fontWeight: 550, color: T.accent }}>{showAll ? "Show top 25" : `Show all ${total}`}</button>}<div style={{ padding: "10px 16px", borderTop: `1px solid ${T.border}`, fontSize: 12, color: T.inkFaint }}>Daily-refreshed data{dataAsOf ? ` · as of ${formatAsOf(dataAsOf)}` : ""} · S&amp;P 500 and Nasdaq 100</div></div>}</section>;
+  return <section><div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 10 }}><div style={{ display: "flex", alignItems: "baseline", gap: 10 }}><h2 className="disp" style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Results</h2><span className="mono" style={{ fontSize: 13, color: T.inkFaint }}>{total > rows.length ? `top ${rows.length} of ${total}` : `${total} names`} · {sort ? "manual sort" : (RANKINGS[ranking]?.label.toLowerCase() || "")}</span></div><div style={{ display: "flex", gap: 8 }}><button onClick={onShare} className="btn btn-ghost btn-sm">Share</button><button onClick={onPublish} className="btn btn-ghost btn-sm">Publish</button><button onClick={onSave} className="btn btn-secondary btn-sm">{saveLabel}</button></div></div>{rows.length === 0 ? <Empty title="No names match this screen." body="Loosen or remove a filter to widen it." /> : <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}><div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: 640 }}><thead><tr style={{ borderBottom: `1px solid ${T.border}` }}><Th style={{ textAlign: "left", paddingLeft: 16 }}>Ticker</Th><Th style={{ textAlign: "left" }}>Company</Th>{cols.map((c) => <Th key={String(c.key)} style={{ textAlign: "right" }} hot={activeCols.has(c.key as string)} onClick={() => onSort(c.key)}>{c.label}{arrow(c.key)}</Th>)}<Th style={{ textAlign: "right", paddingRight: 16 }} onClick={() => onSort("chg_1w")}>1W{arrow("chg_1w")}</Th></tr></thead><tbody>{rows.map((s) => <tr key={s.symbol} className="row-hover" style={{ borderBottom: `1px solid ${T.border}` }}><td className="mono" style={{ fontWeight: 600, padding: "11px 8px 11px 16px" }}>{s.symbol}</td><td style={{ padding: "11px 8px" }}>{s.name} <span style={{ color: T.inkFaint, fontSize: 12 }}>· {s.sector ?? "—"}</span></td>{cols.map((c) => <td key={String(c.key)} className="mono" style={{ textAlign: "right", padding: "11px 8px", color: activeCols.has(c.key as string) ? T.ink : T.inkSoft, fontWeight: activeCols.has(c.key as string) ? 600 : 400 }}>{c.fmt(s[c.key])}</td>)}<td className="mono" style={{ textAlign: "right", padding: "11px 16px 11px 8px", color: (s.chg_1w ?? 0) >= 0 ? T.gain : T.loss }}>{s.chg_1w == null ? "—" : `${s.chg_1w >= 0 ? "+" : ""}${s.chg_1w.toFixed(1)}%`}</td></tr>)}</tbody></table></div>{total > 25 && <button onClick={onToggleShowAll} style={{ width: "100%", padding: "11px 16px", background: T.surfaceAlt, border: "none", borderTop: `1px solid ${T.border}`, fontSize: 13, fontWeight: 550, color: T.accent }}>{showAll ? "Show top 25" : `Show all ${total}`}</button>}<div style={{ padding: "10px 16px", borderTop: `1px solid ${T.border}`, fontSize: 12, color: T.inkFaint }}>Daily-refreshed data{dataAsOf ? ` · as of ${formatAsOf(dataAsOf)}` : ""} · S&amp;P 500 and Nasdaq 100 · issuer-deduplicated</div></div>}</section>;
 }
 
 function Saved({ saved, onLoad, onDelete, onRename }: { saved: SavedRow[]; onLoad: (s: SavedRow) => void; onDelete: (id: string) => void; onRename: (s: SavedRow) => void }) {
@@ -417,15 +429,15 @@ function Preferences({ preferences, onDelete }: { preferences: PreferenceRow[]; 
 function Empty({ title, body }: { title: string; body: string }) { return <div style={{ background: T.surface, border: `1px dashed ${T.borderStrong}`, borderRadius: 14, padding: "28px 20px", textAlign: "center" }}><div className="disp" style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>{title}</div><div style={{ fontSize: 14, color: T.inkSoft }}>{body}</div></div>; }
 function Th({ children, style, hot, onClick }: { children: React.ReactNode; style?: React.CSSProperties; hot?: boolean; onClick?: () => void }) { return <th onClick={onClick} className={onClick ? "sortable" : undefined} style={{ padding: "10px 8px", fontSize: 11.5, fontWeight: 600, letterSpacing: ".04em", color: hot ? T.accent : T.inkFaint, textTransform: "uppercase", whiteSpace: "nowrap", ...style }}>{children}</th>; }
 
-function formatFilter(f: Pick<Filter, "field" | "op" | "value">) { const m = FIELDS[f.field]; if (!m) return `${f.field} ${f.op} ${f.value}`; if (m.kind === "cat") return `${m.label} ${f.op === "in" ? "is one of" : f.op === "!=" ? "is not" : "is"} ${f.op === "in" ? String(f.value).split("|").join(" or ") : f.value}`; const suffix = m.unit === "%" || m.unit === "×" ? m.unit : m.unit === "$B" ? "B" : ""; return `${m.label} ${f.op} ${f.value}${suffix}`; }
-function fmtNum(v: number | null, dp = 1) { return v == null ? "—" : v.toFixed(dp); }
+function formatFilter(f: Pick<Filter, "field" | "op" | "value">) { const m = FIELDS[f.field]; if (!m) return `${f.field} ${f.op} ${f.value}`; if (m.kind === "cat") return `${m.label} ${f.op === "in" ? "is one of" : f.op === "!=" ? "is not" : "is"} ${f.op === "in" ? String(f.value).split("|").join(" or ") : f.value}`; const suffix = m.unit === "%" || m.unit === "×" ? m.unit : m.unit === "$B" ? "B" : m.unit === "M sh/day" ? "M sh/day" : ""; return `${m.label} ${f.op} ${f.value}${suffix}`; }
+function fmtNum(v: number | null | undefined, dp = 1) { return v == null ? "—" : v.toFixed(dp); }
 type Col = { key: keyof StockRow; label: string; fmt: (v: any) => string };
 const pct = (v: any) => v == null ? "—" : Number(v).toFixed(1) + "%";
 const mult = (v: any) => v == null ? "—" : Number(v).toFixed(1) + "×";
 const ALL_COLS: Record<string, Col> = {
   forward_pe: { key: "forward_pe", label: "Forward P/E", fmt: (v) => fmtNum(v) }, peg: { key: "peg", label: "PEG", fmt: (v) => fmtNum(v, 2) }, forward_peg: { key: "forward_peg", label: "Forward PEG", fmt: (v) => fmtNum(v, 2) }, earnings_yield: { key: "earnings_yield", label: "Earnings yield", fmt: pct },
   div_growth_5y: { key: "div_growth_5y", label: "Div gr. 5Y", fmt: pct }, payout_ratio: { key: "payout_ratio", label: "Payout", fmt: pct }, roe: { key: "roe", label: "ROE TTM", fmt: pct }, gross_margin: { key: "gross_margin", label: "Gross margin", fmt: pct }, current_ratio: { key: "current_ratio", label: "Current ratio", fmt: (v) => fmtNum(v, 2) }, quick_ratio: { key: "quick_ratio", label: "Quick ratio", fmt: (v) => fmtNum(v, 2) },
-  price: { key: "price", label: "Price", fmt: (v) => v == null ? "—" : `$${Number(v).toFixed(2)}` }, market_cap: { key: "market_cap", label: "Mkt cap", fmt: (v) => v == null ? "—" : `$${v}B` }, pe: { key: "pe", label: "P/E", fmt: (v) => fmtNum(v) }, pb: { key: "pb", label: "P/B", fmt: (v) => fmtNum(v) }, ps: { key: "ps", label: "P/S", fmt: (v) => fmtNum(v) }, div_yield: { key: "div_yield", label: "Yield", fmt: pct }, beta: { key: "beta", label: "Beta", fmt: (v) => fmtNum(v, 2) }, rev_growth: { key: "rev_growth", label: "Rev gr.", fmt: pct },
+  price: { key: "price", label: "Price", fmt: (v) => v == null ? "—" : `$${Number(v).toFixed(2)}` }, market_cap: { key: "market_cap", label: "Mkt cap", fmt: (v) => v == null ? "—" : `$${v}B` }, avg_volume_20d: { key: "avg_volume_20d", label: "Avg vol 20D", fmt: (v) => v == null ? "—" : `${Number(v).toFixed(2)}M` }, pe: { key: "pe", label: "P/E", fmt: (v) => fmtNum(v) }, pb: { key: "pb", label: "P/B", fmt: (v) => fmtNum(v) }, ps: { key: "ps", label: "P/S", fmt: (v) => fmtNum(v) }, div_yield: { key: "div_yield", label: "Yield", fmt: pct }, beta: { key: "beta", label: "Beta", fmt: (v) => fmtNum(v, 2) }, rev_growth: { key: "rev_growth", label: "Rev gr.", fmt: pct },
   roic: { key: "roic", label: "ROIC FY", fmt: pct }, operating_margin: { key: "operating_margin", label: "Op. margin", fmt: pct }, fcf_margin: { key: "fcf_margin", label: "FCF margin FY", fmt: pct }, fcf_yield: { key: "fcf_yield", label: "FCF yield", fmt: pct }, debt_equity: { key: "debt_equity", label: "Debt/equity", fmt: (v) => fmtNum(v, 2) }, interest_coverage: { key: "interest_coverage", label: "Interest cover", fmt: mult }, rev_growth_3y: { key: "rev_growth_3y", label: "Rev gr. 3Y", fmt: pct }, eps_growth_3y: { key: "eps_growth_3y", label: "EPS gr. 3Y", fmt: pct }, ev_ebitda: { key: "ev_ebitda", label: "EV/EBITDA", fmt: mult },
   rsi: { key: "rsi", label: "RSI", fmt: (v) => fmtNum(v, 0) }, from_52w_high: { key: "from_52w_high", label: "% off high", fmt: pct },
 };

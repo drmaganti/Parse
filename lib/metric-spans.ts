@@ -25,6 +25,7 @@ export const FUNDAMENTAL_TERMS: [string, string][] = [
   ["currentRatio", "(?:current ratio)"],
   ["quickRatio", "(?:quick ratio|acid[- ]test ratio)"],
   ["evEbitda", "(?:ev\\s*(?:to|/)\\s*ebitda|enterprise value\\s*(?:to|/)\\s*ebitda)"],
+  ["avgVolume20d", "(?:20[- ]?day average (?:daily )?(?:share )?volume|average daily (?:share |trading )?volume|average (?:share|trading) volume|daily trading volume|trading volume|\\bvolume\\b)"],
 ];
 
 type SpanSpec = { field: string; source: string };
