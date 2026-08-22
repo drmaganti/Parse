@@ -2,6 +2,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 import Script from "next/script";
 import type { ReactNode } from "react";
+import PostHogProvider from "../components/PostHogProvider";
 
 const title = "Parse — Natural Language Stock Screener";
 const description = "Describe what you’re looking for. Parse turns your words into transparent, editable stock-screening filters and runs them on daily-refreshed market data.";
@@ -49,7 +50,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en">
       <body>
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareJsonLd) }} />
-        {children}
+        <PostHogProvider>{children}</PostHogProvider>
         {gaId ? (
           <>
             <Script src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`} strategy="afterInteractive" />
