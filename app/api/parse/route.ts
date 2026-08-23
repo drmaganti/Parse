@@ -1,5 +1,7 @@
 import { parseQuery, type ParseMode } from "../../../lib/parse";
 import { parseWithCriterionLedgerHardened } from "../../../lib/criterion-ledger-hardened";
+import { cookies } from "next/headers";
+import { GUEST_RUN_COOKIE, GUEST_RUN_LIMIT, normalizeGuestRuns } from "../../../lib/guest-runs";
 
 // POST /api/parse
 // body: { query: string, filters?: Filter[], ranking?: string, mode?: "new" | "refine" }
@@ -17,6 +19,9 @@ export async function POST(req: Request) {
 
   const query = typeof body?.query === "string" ? body.query.trim() : "";
   if (!query) return Response.json({ error: "Describe the screen you want." }, { status: 400 });
+  if (body?.guest === true && normalizeGuestRuns(cookies().get(GUEST_RUN_COOKIE)?.value) >= GUEST_RUN_LIMIT) {
+    return Response.json({ error: "You’ve used all three guest screens. Create an account to continue." }, { status: 429 });
+  }
 
   const filters = Array.isArray(body?.filters) ? body.filters : [];
   const lockedIds = Array.isArray(body?.lockedIds) ? body.lockedIds : [];

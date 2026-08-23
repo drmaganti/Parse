@@ -37,6 +37,7 @@ function nextId(field: string, op: Filter["op"]) {
 export default function TryPage() {
   const [stocks, setStocks] = useState<StockRow[]>([]);
   const [input, setInput] = useState("");
+  const [lastInterpretedInput, setLastInterpretedInput] = useState("");
   const [screenQuery, setScreenQuery] = useState("");
   const [filters, setFilters] = useState<Filter[]>([]);
   const [results, setResults] = useState<ScreenResult[]>([]);
@@ -45,6 +46,7 @@ export default function TryPage() {
   const [interpretation, setInterpretation] = useState("");
   const [assumptions, setAssumptions] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState("");
   const [conflict, setConflict] = useState("");
   const [runs, setRuns] = useState(0);
@@ -60,9 +62,19 @@ export default function TryPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const initialQuery = params.get("q");
+    const previewGuestLimit = process.env.NODE_ENV === "development" && params.get("preview") === "guest-limit";
     const exact = decodeScreenState(params.get("state"));
     const collectionSlug = params.get("collection") || exact?.universe?.slug;
     (async () => {
+      if (!previewGuestLimit) {
+        try {
+          const countResponse = await fetch("/api/guest-runs");
+          const countBody = await countResponse.json();
+          if (countResponse.ok) setRuns(Number(countBody.runs) || 0);
+        } catch {
+          setError("Could not verify the guest screen limit. Refresh and try again.");
+        }
+      }
       const { data, error } = await supabase.from("stocks").select("*");
       if (error) { setError("Could not load the stock universe."); return; }
       let rows = (data ?? []) as StockRow[];
@@ -76,11 +88,23 @@ export default function TryPage() {
         setUniverseLabel(nextUniverse.label || collectionSlug); setUniverse(nextUniverse);
       }
       setStocks(rows);
+      if (previewGuestLimit) {
+        setInput("Technology stocks with P/E below 25");
+        setLastInterpretedInput("Technology stocks with P/E below 25");
+        setRuns(3);
+      }
       if (exact) {
         const issue = findFilterConflict(exact.filters);
-        setScreenQuery(exact.q); setFilters(exact.filters); setRanking(exact.ranking); setConflict(issue || "");
+        setInput(exact.q); setLastInterpretedInput(exact.q); setScreenQuery(exact.q); setFilters(exact.filters); setRanking(exact.ranking); setConflict(issue || "");
         setResults(issue ? [] : runScreen(rows, exact.filters, exact.ranking, 25)); setHasRun(true); setInterpretation("Loaded an exact shared screen.");
       } else if (initialQuery) setInput(initialQuery.slice(0, 320));
+      else if (!previewGuestLimit) {
+        const savedQuery = window.localStorage.getItem("parse_guest_last_query");
+        if (savedQuery) {
+          setInput(savedQuery.slice(0, 320));
+          setLastInterpretedInput(savedQuery.slice(0, 320));
+        }
+      }
     })();
   }, []);
 
@@ -105,7 +129,9 @@ export default function TryPage() {
       const res = await fetch("/api/parse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: instruction, filters: isRefine ? filters : [], ranking, mode: isRefine ? "refine" : "new" }),
+        // The visible sentence is the source of truth. Rebuild from it so deleting
+        // or replacing language also removes the corresponding stale filters.
+        body: JSON.stringify({ query: instruction, filters: [], ranking, mode: "new", guest: true }),
       });
       const body = await res.json();
       if (!res.ok || body?.error) throw new Error(body?.error || "Could not interpret that screen.");
@@ -113,8 +139,9 @@ export default function TryPage() {
       const nextRanking = body.ranking || ranking || "marketCap";
       const issue = findFilterConflict(next);
       setFilters(next); setRanking(nextRanking); setInterpretation(body.interpretation || ""); setAssumptions(body.assumptions || []);
-      setConflict(issue || ""); setSort(null); setReviewing(true); setInput("");
-      if (!isRefine) setScreenQuery(instruction);
+      setConflict(issue || ""); setSort(null); setReviewing(true);
+      setLastInterpretedInput(instruction); setScreenQuery(instruction);
+      window.localStorage.setItem("parse_guest_last_query", instruction);
       trackEvent("screen_interpretation_ready", { refine: isRefine, filter_count: next.length, assumptions: (body.assumptions || []).length, source: acquisitionSource() });
     } catch (e: any) {
       const message = e?.message || "Could not interpret that screen.";
@@ -123,13 +150,23 @@ export default function TryPage() {
     } finally { setLoading(false); }
   };
 
-  const confirmRun = () => {
-    if (!reviewing || conflict || runs >= 3) return;
-    const nextResults = runScreen(stocks, filters, ranking, 25);
-    trackEvent("screen_run_started", { guest_run: runs + 1, refine: pendingRefine, source: acquisitionSource() });
-    setResults(nextResults); setHasRun(true); setReviewing(false); setReviewBase(null); setPendingRefine(false);
-    setRuns((n) => n + 1); setSort(null);
-    trackEvent("screen_run_success", { guest_run: runs + 1, refine: pendingRefine, filter_count: filters.length, result_count: nextResults.length, source: acquisitionSource() });
+  const confirmRun = async () => {
+    if (!reviewing || conflict || runs >= 3 || confirming) return;
+    setConfirming(true); setError("");
+    try {
+      const countResponse = await fetch("/api/guest-runs", { method: "POST" });
+      const countBody = await countResponse.json();
+      if (!countResponse.ok) throw new Error(countBody?.error || "Could not record this guest screen.");
+      const nextResults = runScreen(stocks, filters, ranking, 25);
+      trackEvent("screen_run_started", { guest_run: countBody.runs, refine: pendingRefine, source: acquisitionSource() });
+      setResults(nextResults); setHasRun(true); setReviewing(false); setReviewBase(null); setPendingRefine(false);
+      setRuns(countBody.runs); setSort(null);
+      trackEvent("screen_run_success", { guest_run: countBody.runs, refine: pendingRefine, filter_count: filters.length, result_count: nextResults.length, source: acquisitionSource() });
+    } catch (e: any) {
+      setError(e?.message || "Could not run this screen.");
+    } finally {
+      setConfirming(false);
+    }
   };
 
   const cancelReview = () => {
@@ -143,8 +180,14 @@ export default function TryPage() {
   };
 
   const resetScreen = () => {
-    setInput(""); setScreenQuery(""); setFilters([]); setResults([]); setRanking("marketCap"); setSort(null);
+    setInput(""); setLastInterpretedInput(""); setScreenQuery(""); setFilters([]); setResults([]); setRanking("marketCap"); setSort(null);
     setInterpretation(""); setAssumptions([]); setConflict(""); setError(""); setHasRun(false); setReviewing(false); setReviewBase(null); setPendingRefine(false); setAdding(false);
+    window.localStorage.removeItem("parse_guest_last_query");
+  };
+
+  const changeInput = (value: string) => {
+    if (reviewing) cancelReview();
+    setInput(value);
   };
 
   const updateFilter = (id: string, patch: Partial<Filter>) => {
@@ -220,15 +263,16 @@ export default function TryPage() {
   const limitReached = runs >= 3;
 
   return <div style={{ minHeight: "100vh", background: T.bg, color: T.ink, fontFamily: "var(--font-body), 'Inter', system-ui, sans-serif" }}>
-    <style>{`.p-btn{height:40px;padding:0 16px;border-radius:10px;border:0;background:${T.accent};color:#fff;font:550 14px Inter,system-ui,sans-serif;cursor:pointer}.p-btn:disabled{opacity:.6}.p-btn-neutral{height:36px;padding:0 13px;border-radius:9px;border:1px solid ${T.border};background:#fff;color:${T.ink};font:550 13.5px Inter,system-ui,sans-serif;cursor:pointer}.p-link{color:${T.accent};text-decoration:none;font-size:14px}.p-query{width:100%;box-sizing:border-box;border:1px solid ${T.borderStrong};border-radius:13px;background:#fff;padding:14px 15px;font:15.5px Inter,system-ui,sans-serif;resize:vertical;min-height:56px}.p-query:focus{outline:none;border-color:${T.accent};box-shadow:0 0 0 3px ${T.accentSoft}}`}</style>
+    <style>{`.p-btn{height:40px;padding:0 16px;border-radius:10px;border:0;background:${T.accent};color:#fff;font:550 14px Inter,system-ui,sans-serif;cursor:pointer}.p-btn:disabled{opacity:.6;cursor:not-allowed}.p-btn-neutral{height:36px;padding:0 13px;border-radius:9px;border:1px solid ${T.border};background:#fff;color:${T.ink};font:550 13.5px Inter,system-ui,sans-serif;cursor:pointer}.p-link{color:${T.accent};text-decoration:none;font-size:14px}.p-query{width:100%;box-sizing:border-box;border:1px solid ${T.borderStrong};border-radius:13px;background:#fff;color:${T.ink};padding:14px 15px;font:15.5px Inter,system-ui,sans-serif;resize:vertical;min-height:56px}.p-query:focus{outline:none;border-color:${T.accent};box-shadow:0 0 0 3px ${T.accentSoft}}.p-query[aria-disabled="true"]{background:#ECEEF1;border-color:${T.border};color:${T.inkSoft};cursor:not-allowed;resize:none}.signup-benefits{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:16px 0 18px;padding:0;list-style:none}.signup-benefits li{display:flex;gap:8px;color:${T.inkSoft};font-size:13.5px;line-height:1.45}.signup-benefits li:before{content:'✓';color:${T.accent};font-weight:700}@media(max-width:640px){.signup-benefits{grid-template-columns:1fr}}`}</style>
     <header style={{ borderBottom: `1px solid ${T.border}` }}><div style={{ maxWidth: 960, margin: "0 auto", padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><a href="/" style={{ color: T.ink, textDecoration: "none", fontFamily: DISP, fontWeight: 600, fontSize: 18 }}>Parse</a><div style={{ display: "flex", gap: 14, alignItems: "center" }}><a className="p-link" href="/screens">Screen ideas</a><a className="p-link" href="/methodology">How it works</a><a className="p-link" href="/account?mode=signin">Sign in</a></div></div></header>
     <main style={{ maxWidth: 960, margin: "0 auto", padding: "36px 24px 72px" }}>
-      <section style={{ maxWidth: 760 }}>
+      <section>
         <h1 style={{ fontFamily: DISP, fontSize: 28, margin: "0 0 6px", letterSpacing: "-0.02em" }}>{reviewing ? "Review the interpretation" : hasRun ? "Refine this screen" : "Describe the screen you want"}</h1>
         <p style={{ color: T.inkSoft, fontSize: 14.5, margin: "0 0 16px" }}>{reviewing ? "Check the filters below. Edit anything you disagree with, then run the verified screen." : hasRun ? "Add or remove a criterion below. Edit a chip directly to change a number." : `Try three screen runs without creating an account. Current universe: ${universeLabel}, refreshed daily.`}</p>
-        {!reviewing && <><textarea className="p-query" value={input} onChange={(e) => setInput(e.target.value)} placeholder={hasRun ? "Example: also require revenue growth above 10%" : "Example: large companies with low P/E ratios"} onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); execute(); } }} />
-        <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}><span style={{ color: T.inkSoft, fontSize: 12.5 }}>{runs}/3 guest screens run</span><div style={{ display: "flex", gap: 8 }}>{hasRun && <button className="p-btn-neutral" onClick={resetScreen}>New screen</button>}<button className="p-btn" onClick={execute} disabled={!stocks.length || loading || limitReached || !input.trim()}>{loading ? "Reading…" : limitReached ? "Guest limit reached" : hasRun ? "Interpret update" : "Interpret screen"}</button></div></div></>}
+        <textarea id="screen-description" className="p-query" aria-label="Screen description" value={input} readOnly={limitReached || loading} aria-disabled={limitReached || undefined} aria-busy={loading || undefined} aria-describedby={limitReached ? "guest-limit-message" : undefined} maxLength={320} onChange={(e) => changeInput(e.target.value)} placeholder={hasRun ? "Edit your sentence to update this screen" : "Example: large companies with low P/E ratios"} onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); execute(); } }} />
+        <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}><span style={{ color: T.inkSoft, fontSize: 12.5 }}>{runs}/3 guest screens run</span><div style={{ display: "flex", gap: 8 }}>{hasRun && !reviewing && !limitReached && <button className="p-btn-neutral" onClick={resetScreen}>New screen</button>}{!reviewing && !limitReached && <button className="p-btn" onClick={execute} disabled={!stocks.length || loading || !input.trim() || input.trim() === lastInterpretedInput}>{loading ? "Reading…" : hasRun ? "Update screen" : "Interpret screen"}</button>}</div></div>
         {error && <div style={{ color: T.loss, marginTop: 10, fontSize: 13.5 }}>{error}</div>}
+        {limitReached && !reviewing && <GuestLimitCard />}
       </section>
 
       {(hasRun || reviewing) && <section style={{ background: T.surface, border: `1px solid ${reviewing ? "#C9CEF3" : T.border}`, borderRadius: 14, padding: 18, marginTop: 24 }}>
@@ -238,7 +282,7 @@ export default function TryPage() {
         {adding && <AddFilter onAdd={addFilter} onCancel={() => setAdding(false)} />}
         {conflict && <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 9, background: "#FFF0EE", color: T.loss, fontSize: 13.5 }}>{conflict} Change or remove one of the filters.</div>}
         {assumptions.length > 0 && <div style={{ marginTop: 12, background: T.accentSoft, color: T.inkSoft, borderRadius: 9, padding: "10px 12px", fontSize: 13 }}>{assumptions.map((a, i) => <div key={i}>· {a}</div>)}</div>}
-        {reviewing && <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}><button className="p-btn-neutral" onClick={cancelReview}>Cancel</button><button className="p-btn" onClick={confirmRun} disabled={Boolean(conflict) || !stocks.length}>Run this screen</button></div>}
+        {reviewing && <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}><button className="p-btn-neutral" onClick={cancelReview} disabled={confirming}>Cancel</button><button className="p-btn" onClick={confirmRun} disabled={Boolean(conflict) || !stocks.length || confirming}>{confirming ? "Running…" : "Run this screen"}</button></div>}
       </section>}
 
       {hasRun && !reviewing && !conflict && <section style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: 18, marginTop: 16 }}>
@@ -253,12 +297,14 @@ export default function TryPage() {
           {activeMetricCols.map((col) => <th key={String(col)} aria-sort={ariaSort(col)} onClick={() => toggleSort(col)} style={headerStyle("right")}>{fieldMetaForColumn(col)?.label || String(col)}{sortArrow(col)}</th>)}
           <th aria-sort={ariaSort("chg_1w")} onClick={() => toggleSort("chg_1w")} style={headerStyle("right")}>1W change{sortArrow("chg_1w")}</th>
         </tr></thead><tbody>{displayedResults.map((r) => <tr key={r.symbol}><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, fontFamily: MONO, fontSize: 13 }}>{r.symbol}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, fontSize: 13 }}>{r.name}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.price == null ? "—" : `$${Number(r.price).toFixed(2)}`}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.market_cap == null ? "—" : `$${Number(r.market_cap).toFixed(1)}B`}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.from_52w_high == null ? "—" : `${Number(r.from_52w_high).toFixed(1)}%`}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.pe == null ? "—" : Number(r.pe).toFixed(1)}</td>{activeMetricCols.map((col) => <td key={String(col)} style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{formatMetricCell(col, r[col])}</td>)}<td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13, color: (r.chg_1w ?? 0) >= 0 ? T.gain : T.loss }}>{r.chg_1w == null ? "—" : `${Number(r.chg_1w).toFixed(1)}%`}</td></tr>)}</tbody></table></div>}
-        <div style={{ marginTop: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}><span style={{ color: T.inkSoft, fontSize: 13.5 }}>Research tool only; these are screen matches, not investment recommendations.</span><a href="/account?mode=signup" className="p-link">Create account to save →</a></div>
+        <div style={{ marginTop: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}><span style={{ color: T.inkSoft, fontSize: 13.5 }}>Research tool only; these are screen matches, not investment recommendations.</span>{!limitReached && <a href="/account?mode=signup" className="p-link">Create account to save →</a>}</div>
       </section>}
-
-      {limitReached && !reviewing && <section style={{ marginTop: 18, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: 18 }}><div style={{ fontFamily: DISP, fontWeight: 600, fontSize: 18, marginBottom: 6 }}>Continue with an account</div><div style={{ color: T.inkSoft, fontSize: 14, marginBottom: 12 }}>Create an account to keep screening and save screens for later.</div><a href="/account?mode=signup" className="p-link">Create account →</a></section>}
     </main>
   </div>;
+}
+
+function GuestLimitCard() {
+  return <section id="guest-limit-message" style={{ marginTop: 18, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: 22 }}><div style={{ fontFamily: DISP, fontWeight: 600, fontSize: 20, marginBottom: 6 }}>Like what you found? Keep screening with a free account.</div><div style={{ color: T.inkSoft, fontSize: 14, lineHeight: 1.5 }}>You’ve used all three guest screens. Create an account to continue your research.</div><ul className="signup-benefits"><li>Run and refine more screens</li><li>Save screens to revisit later</li><li>Access your saved screens anywhere</li></ul><a href="/account?mode=signup" className="p-btn" style={{ display: "inline-flex", alignItems: "center", textDecoration: "none" }} onClick={() => trackEvent("guest_limit_signup_clicked", { source: acquisitionSource() })}>Create free account</a><div style={{ color: T.inkSoft, fontSize: 12.5, marginTop: 10 }}>Already have an account? <a href="/account?mode=signin" className="p-link" style={{ fontSize: "inherit" }}>Sign in</a></div></section>;
 }
 
 function fieldMetaForColumn(col: keyof StockRow) { return Object.values(FIELDS).find((m) => m.col === col); }
