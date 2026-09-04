@@ -40,6 +40,27 @@ normalized stock rows
 Supabase cache
 ```
 
+## Ask Warren integration
+
+Parse owns natural-language interpretation, editable filters, screen execution, and the result-browsing experience. Ask Warren owns reusable company scoring and evidence-grounded Deep research.
+
+```text
+User describes a screen in Parse
+                ↓
+Parse validates and runs editable filters
+                ↓
+User selects a company for deeper research
+                ↓
+Parse passes the selected ticker and screen context
+                ↓
+Ask Warren Deep
+                ↓
+Parse renders scores, thesis, bull/bear cases, risks,
+evidence provenance, and missing-data confidence
+```
+
+Parse must not duplicate Ask Warren's scoring, evidence collection, or Deep prompts. The integration should preserve the originating screen context so users can move into company research without losing why the stock appeared in their results.
+
 ## Main boundaries
 
 ### Field vocabulary
