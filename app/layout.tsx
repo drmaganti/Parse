@@ -14,6 +14,7 @@ export const metadata: Metadata = {
   applicationName: "Parse",
   description,
   keywords: ["stock screener", "AI stock screener", "natural language stock screener", "stock screening", "investment research"],
+  alternates: { canonical: "/" },
   robots: { index: true, follow: true },
   openGraph: {
     title,
