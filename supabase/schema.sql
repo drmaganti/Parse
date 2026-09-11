@@ -15,6 +15,12 @@ create table if not exists public.stocks (
   analyst_target_mean numeric,
   analyst_target_high numeric,
   analyst_target_updated_at timestamptz,
+  analyst_count integer,
+  low_target_return_pct numeric,
+  median_target_return_pct numeric,
+  high_target_return_pct numeric,
+  target_spread_pct numeric,
+  target_risk_reward numeric,
   market_cap     numeric,          -- USD billions
   pe             numeric,
   forward_pe     numeric,
@@ -80,6 +86,12 @@ alter table public.stocks add column if not exists analyst_target_median numeric
 alter table public.stocks add column if not exists analyst_target_mean numeric;
 alter table public.stocks add column if not exists analyst_target_high numeric;
 alter table public.stocks add column if not exists analyst_target_updated_at timestamptz;
+alter table public.stocks add column if not exists analyst_count integer;
+alter table public.stocks add column if not exists low_target_return_pct numeric;
+alter table public.stocks add column if not exists median_target_return_pct numeric;
+alter table public.stocks add column if not exists high_target_return_pct numeric;
+alter table public.stocks add column if not exists target_spread_pct numeric;
+alter table public.stocks add column if not exists target_risk_reward numeric;
 
 alter table public.stocks enable row level security;
 

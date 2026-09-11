@@ -10,6 +10,7 @@ export interface AnalystPriceTargets {
   median: number | null;
   mean: number | null;
   high: number | null;
+  analystCount: number | null;
 }
 
 let sessionPromise: Promise<{ cookie: string; crumb: string } | null> | null = null;
@@ -87,6 +88,7 @@ export async function fetchYahooAnalystTargets(symbol: string): Promise<AnalystP
       median: rawNumber(financialData?.targetMedianPrice),
       mean: rawNumber(financialData?.targetMeanPrice),
       high: rawNumber(financialData?.targetHighPrice),
+      analystCount: rawNumber(financialData?.numberOfAnalystOpinions),
     };
     return Object.values(targets).some((value) => value != null) ? targets : null;
   } catch {

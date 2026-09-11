@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import { fetchProfile, fetchMetrics, fetchQuote, fetchCandles } from "../lib/finnhub";
 import { fetchYahooAnalystTargets, fetchYahooCandles } from "../lib/yahoo";
+import { analystTargetMetrics } from "../lib/analyst-targets";
 import { rsi, sma, pctChange, fromHigh } from "../lib/indicators";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -24,6 +25,8 @@ interface Row {
   price: number | null; market_cap: number | null; avg_volume_20d: number | null;
   analyst_target_low?: number | null; analyst_target_median?: number | null; analyst_target_mean?: number | null; analyst_target_high?: number | null;
   analyst_target_updated_at?: string;
+  analyst_count?: number | null; low_target_return_pct?: number | null; median_target_return_pct?: number | null; high_target_return_pct?: number | null;
+  target_spread_pct?: number | null; target_risk_reward?: number | null;
   pe: number | null; forward_pe: number | null; pb: number | null; ps: number | null; peg: number | null; forward_peg: number | null; earnings_yield: number | null;
   div_yield: number | null; div_growth_5y: number | null; payout_ratio: number | null;
   beta: number | null; rev_growth: number | null;
@@ -85,6 +88,7 @@ async function build(symbol: string): Promise<Row | null> {
         analyst_target_median: round(analystTargets.median, 2),
         analyst_target_mean: round(analystTargets.mean, 2),
         analyst_target_high: round(analystTargets.high, 2),
+        ...analystTargetMetrics(price, analystTargets),
         analyst_target_updated_at: new Date().toISOString(),
       } : {}),
       market_cap: metrics.marketCap != null ? round(metrics.marketCap / 1000, 1) : null,
