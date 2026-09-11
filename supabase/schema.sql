@@ -10,6 +10,11 @@ create table if not exists public.stocks (
   name           text not null,
   sector         text,
   price          numeric,
+  analyst_target_low numeric,
+  analyst_target_median numeric,
+  analyst_target_mean numeric,
+  analyst_target_high numeric,
+  analyst_target_updated_at timestamptz,
   market_cap     numeric,          -- USD billions
   pe             numeric,
   forward_pe     numeric,
@@ -70,6 +75,11 @@ alter table public.stocks add column if not exists roe numeric;
 alter table public.stocks add column if not exists gross_margin numeric;
 alter table public.stocks add column if not exists current_ratio numeric;
 alter table public.stocks add column if not exists quick_ratio numeric;
+alter table public.stocks add column if not exists analyst_target_low numeric;
+alter table public.stocks add column if not exists analyst_target_median numeric;
+alter table public.stocks add column if not exists analyst_target_mean numeric;
+alter table public.stocks add column if not exists analyst_target_high numeric;
+alter table public.stocks add column if not exists analyst_target_updated_at timestamptz;
 
 alter table public.stocks enable row level security;
 

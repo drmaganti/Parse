@@ -5,7 +5,9 @@ on:
     branches: [main]
     paths:
       - "lib/finnhub.ts"
+      - "lib/yahoo.ts"
       - "scripts/ingest.ts"
+      - "supabase/migrations/**"
       - "data/universe.json"
   schedule:
     # 06:30 UTC nightly (after US market close, before morning use). Adjust as needed.
