@@ -6,6 +6,16 @@ export interface MetricSpan {
 }
 
 export const FUNDAMENTAL_TERMS: [string, string][] = [
+  ["medianTargetReturn", "(?:(?:median|consensus) analyst target (?:return|upside|downside)|(?:return|upside|downside) (?:to|from) (?:the )?(?:median|consensus) analyst target|(?:median|consensus) target (?:return|upside|downside))"],
+  ["lowTargetReturn", "(?:(?:low|lowest) analyst target (?:return|upside|downside)|(?:return|upside|downside) (?:to|from) (?:the )?(?:low|lowest) analyst target|low target (?:return|upside|downside))"],
+  ["highTargetReturn", "(?:(?:high|highest) analyst target (?:return|upside)|(?:return|upside) (?:to|from) (?:the )?(?:high|highest) analyst target|high target (?:return|upside))"],
+  ["targetSpread", "(?:analyst target spread|target price spread|spread (?:between|of) analyst targets)"],
+  ["targetRiskReward", "(?:analyst target (?:risk[- /]?reward|reward[- /]?risk)|target (?:risk[- /]?reward|reward[- /]?risk))"],
+  ["analystTargetMedian", "(?:(?:median|consensus) analyst (?:price )?target|analyst (?:median|consensus) (?:price )?target)"],
+  ["analystTargetMean", "(?:mean|average) analyst (?:price )?target"],
+  ["analystTargetLow", "(?:(?:low|lowest) analyst (?:price )?target|analyst low (?:price )?target)"],
+  ["analystTargetHigh", "(?:(?:high|highest) analyst (?:price )?target|analyst high (?:price )?target)"],
+  ["analystCount", "(?:analyst count|number of analysts|analyst opinions|analyst coverage|covered by(?: at least| at most| more than| fewer than| over| under)?\\s*\\d+\\s*analysts?)"],
   ["forwardPe", "(?:forward\\s+(?:p\\/?e\\b|price[- ]?to[- ]?earnings\\b))"],
   ["forwardPeg", "(?:forward\\s+peg\\b|forward\\s+price.?earnings.?to.?growth\\b)"],
   ["peg", "(?:\\bpeg\\b|price.?earnings.?to.?growth\\b)"],

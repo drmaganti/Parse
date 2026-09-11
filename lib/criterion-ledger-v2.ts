@@ -103,6 +103,11 @@ const CONCEPT_ALIASES: Record<string, string> = {
   interest_coverage: "interestCoverage", revenue_growth_3y: "revGrowth3Y", three_year_revenue_cagr: "revGrowth3Y",
   eps_growth_3y: "epsGrowth3Y", three_year_eps_cagr: "epsGrowth3Y", ev_ebitda: "evEbitda",
   from_52w_high: "from52wHigh", change_1w: "chg1w",
+  analyst_target_low: "analystTargetLow", analyst_target_median: "analystTargetMedian", analyst_target_mean: "analystTargetMean", analyst_target_high: "analystTargetHigh",
+  analyst_count: "analystCount", number_of_analysts: "analystCount", analyst_coverage: "analystCount",
+  low_target_return: "lowTargetReturn", low_target_return_pct: "lowTargetReturn", median_target_return: "medianTargetReturn", median_target_return_pct: "medianTargetReturn",
+  consensus_target_upside: "medianTargetReturn", high_target_return: "highTargetReturn", high_target_return_pct: "highTargetReturn",
+  target_spread: "targetSpread", target_spread_pct: "targetSpread", target_risk_reward: "targetRiskReward", target_reward_risk: "targetRiskReward",
   profitability: "profitable", low_leverage: "low_debt", reasonable_value: "reasonable_valuation", valuation: "reasonable_valuation",
   industry: "sector", category: "sector",
 };

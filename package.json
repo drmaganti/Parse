@@ -12,6 +12,7 @@
     "test:parser-contract": "tsx eval/contract.ts",
     "test:composite-regressions": "tsx eval/composite-regressions.ts",
     "test:liquidity": "tsx eval/liquidity-dedupe-regressions.ts",
+    "test:analyst-targets": "tsx eval/analyst-target-regressions.ts",
     "test:final-coverage": "tsx eval/final-coverage-regressions.ts && tsx eval/release-blind-50-v2.ts",
     "test:investor-language": "tsx eval/investor-language-regressions.ts && tsx eval/investor-intent-regressions.ts && npm run test:final-coverage",
     "eval:moneyflock50": "tsx eval/moneyflock-style-50.ts",

@@ -25,6 +25,16 @@ export const FIELDS: Record<string, FieldMeta> = {
   beta:        { key: "beta",        col: "beta",          label: "Beta",       kind: "num" },
   marketCap:   { key: "marketCap",   col: "market_cap",    label: "Market cap", kind: "num", unit: "$B" },
   avgVolume20d:{ key: "avgVolume20d", col: "avg_volume_20d", label: "Avg volume (20D)", kind: "num", unit: "M sh/day" },
+  analystTargetLow:{ key: "analystTargetLow", col: "analyst_target_low", label: "Low analyst target", kind: "num", unit: "$" },
+  analystTargetMedian:{ key: "analystTargetMedian", col: "analyst_target_median", label: "Median analyst target", kind: "num", unit: "$" },
+  analystTargetMean:{ key: "analystTargetMean", col: "analyst_target_mean", label: "Mean analyst target", kind: "num", unit: "$" },
+  analystTargetHigh:{ key: "analystTargetHigh", col: "analyst_target_high", label: "High analyst target", kind: "num", unit: "$" },
+  analystCount:{ key: "analystCount", col: "analyst_count", label: "Analyst count", kind: "num" },
+  lowTargetReturn:{ key: "lowTargetReturn", col: "low_target_return_pct", label: "Low-target return", kind: "num", unit: "%" },
+  medianTargetReturn:{ key: "medianTargetReturn", col: "median_target_return_pct", label: "Median-target return", kind: "num", unit: "%" },
+  highTargetReturn:{ key: "highTargetReturn", col: "high_target_return_pct", label: "High-target return", kind: "num", unit: "%" },
+  targetSpread:{ key: "targetSpread", col: "target_spread_pct", label: "Analyst target spread", kind: "num", unit: "%" },
+  targetRiskReward:{ key: "targetRiskReward", col: "target_risk_reward", label: "Target reward/risk", kind: "num", unit: "×" },
   revGrowth:   { key: "revGrowth",   col: "rev_growth",    label: "Rev growth", kind: "num", unit: "%" },
   roic:        { key: "roic",        col: "roic",              label: "ROIC (FY)",          kind: "num", unit: "%" },
   roe:         { key: "roe",         col: "roe",               label: "ROE (TTM)",          kind: "num", unit: "%" },
@@ -73,6 +83,12 @@ export interface StockRow {
   analyst_target_median: number | null;
   analyst_target_mean: number | null;
   analyst_target_high: number | null;
+  analyst_count: number | null;
+  low_target_return_pct: number | null;
+  median_target_return_pct: number | null;
+  high_target_return_pct: number | null;
+  target_spread_pct: number | null;
+  target_risk_reward: number | null;
   analyst_target_updated_at?: string | null;
   market_cap: number | null;
   avg_volume_20d: number | null;

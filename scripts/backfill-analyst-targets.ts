@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import { fetchYahooAnalystTargets } from "../lib/yahoo";
+import { analystTargetMetrics } from "../lib/analyst-targets";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const supabaseUrl = requireEnv("SUPABASE_URL");
@@ -28,6 +29,7 @@ async function main() {
       continue;
     }
 
+    const { data: stock } = await supabase.from("stocks").select("price").eq("symbol", symbol).maybeSingle();
     const { data, error } = await supabase
       .from("stocks")
       .update({
@@ -35,6 +37,7 @@ async function main() {
         analyst_target_median: round(targets.median),
         analyst_target_mean: round(targets.mean),
         analyst_target_high: round(targets.high),
+        ...analystTargetMetrics(stock?.price == null ? null : Number(stock.price), targets),
         analyst_target_updated_at: new Date().toISOString(),
       })
       .eq("symbol", symbol)

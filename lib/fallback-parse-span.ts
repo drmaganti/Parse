@@ -30,7 +30,7 @@ function opFor(word?: string): Op {
   const w = (word || "over").toLowerCase();
   if (w === "at most" || w === "no more than" || w === "maximum" || w === "max" || w === "<=") return "<=";
   if (w === "at least" || w === "minimum" || w === "min" || w === ">=") return ">=";
-  if (/under|below|less than|lower than|</.test(w)) return "<";
+  if (/under|below|less than|fewer than|lower than|</.test(w)) return "<";
   return ">";
 }
 
@@ -116,6 +116,33 @@ function parseFresh(query: string): ParsedScreen {
   const cmp = "no more than|at most|less than|lower than|under|below|maximum|max|<=|<|at least|minimum|min|more than|greater than|over|above|>=|>";
   const unsupportedMetric = hasKnownUnsupportedMetric(q);
   if (/\bquality (?:companies|stocks|names)\b/.test(genericQ)) assumptions.push("Parse does not have a standalone quality metric yet, so no quality filter was added.");
+
+  // Analyst-target language often places the threshold before the metric
+  // ("at least 20% median target upside"), unlike conventional ratio queries.
+  const leadingTargetThresholds: Array<[string, RegExp]> = [
+    ["medianTargetReturn", new RegExp(`(${cmp})\\s*(-?\\d+(?:\\.\\d+)?)\\s*%?\\s*(?:(?:median|consensus) (?:analyst )?target (?:return|upside))`)],
+    ["lowTargetReturn", new RegExp(`(${cmp})\\s*(-?\\d+(?:\\.\\d+)?)\\s*%?\\s*(?:(?:low|lowest) (?:analyst )?target (?:return|upside))`)],
+    ["highTargetReturn", new RegExp(`(${cmp})\\s*(-?\\d+(?:\\.\\d+)?)\\s*%?\\s*(?:(?:high|highest) (?:analyst )?target (?:return|upside))`)],
+    ["targetSpread", new RegExp(`(${cmp})\\s*(-?\\d+(?:\\.\\d+)?)\\s*%?\\s*(?:analyst )?target spread`)],
+    ["targetRiskReward", new RegExp(`(${cmp})\\s*(-?\\d+(?:\\.\\d+)?)\\s*(?:x|×)?\\s*(?:analyst )?target (?:risk[- /]?reward|reward[- /]?risk)`)],
+  ];
+  for (const [field, rx] of leadingTargetThresholds) addThreshold(out, field, q.match(rx));
+  const coveredByAnalysts = q.match(/covered by\s*(at least|at most|more than|fewer than|over|under)?\s*(\d+(?:\.\d+)?)\s*analysts?/);
+  if (coveredByAnalysts) addThreshold(out, "analystCount", coveredByAnalysts);
+
+  if (/trading below (?:the )?(?:low|lowest) analyst (?:price )?target|(?:low|lowest) analyst (?:price )?target (?:is )?above (?:the )?(?:current )?price/.test(q)) {
+    addUnique(out, mk("lowTargetReturn", ">", 0));
+  }
+  const limitedLowDownside = q.match(/(?:less than|under|at most|no more than)\s*(\d+(?:\.\d+)?)\s*%?\s*downside (?:to|from) (?:the )?(?:low|lowest) (?:analyst )?target/);
+  if (limitedLowDownside) addUnique(out, mk("lowTargetReturn", ">=", -Number(limitedLowDownside[1])));
+  if (/tightly grouped|tight(?:ly)? clustered|closely grouped/.test(q) && /analyst|target/.test(q)) {
+    addUnique(out, mk("targetSpread", "<", 20));
+    assumptions.push("Read tightly grouped analyst targets as a target spread below 20%.");
+  }
+  if (/favo(?:u)?rable|attractive|strong/.test(q) && /(?:analyst )?target (?:risk[- /]?reward|reward[- /]?risk)/.test(q)) {
+    addUnique(out, mk("targetRiskReward", ">", 2));
+    assumptions.push("Read favorable analyst target reward/risk as above 2×.");
+  }
 
   const between = "[^\\d-]*between\\s*(-?\\d+(?:\\.\\d+)?)\\s*%?\\s*(?:and|to)\\s*(-?\\d+(?:\\.\\d+)?)";
   addRange(out, "pe", scoped("pe").match(new RegExp(`(?:\\bp\\/?e\\b|price.?to.?earnings)${between}`)));
