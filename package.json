@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "ingest": "tsx scripts/ingest.ts",
+    "backfill:analyst-targets": "tsx scripts/backfill-analyst-targets.ts",
     "ingest:investors": "tsx scripts/ingest-investor-holdings.ts",
     "test:parser-contract": "tsx eval/contract.ts",
     "test:composite-regressions": "tsx eval/composite-regressions.ts",

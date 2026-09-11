@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import { fetchProfile, fetchMetrics, fetchQuote, fetchCandles } from "../lib/finnhub";
-import { fetchYahooCandles } from "../lib/yahoo";
+import { fetchYahooAnalystTargets, fetchYahooCandles } from "../lib/yahoo";
 import { rsi, sma, pctChange, fromHigh } from "../lib/indicators";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -22,6 +22,8 @@ const supabase = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSessio
 interface Row {
   symbol: string; name: string; sector: string | null;
   price: number | null; market_cap: number | null; avg_volume_20d: number | null;
+  analyst_target_low?: number | null; analyst_target_median?: number | null; analyst_target_mean?: number | null; analyst_target_high?: number | null;
+  analyst_target_updated_at?: string;
   pe: number | null; forward_pe: number | null; pb: number | null; ps: number | null; peg: number | null; forward_peg: number | null; earnings_yield: number | null;
   div_yield: number | null; div_growth_5y: number | null; payout_ratio: number | null;
   beta: number | null; rev_growth: number | null;
@@ -46,17 +48,21 @@ async function build(symbol: string): Promise<Row | null> {
     let chg1w: number | null = null;
     let avgVolume20d: number | null = null;
 
-    if (CANDLE_SOURCE !== "none") {
-      const candles = CANDLE_SOURCE === "finnhub" ? await fetchCandles(symbol, FINNHUB) : await fetchYahooCandles(symbol);
-      if (candles && candles.closes.length) {
-        rsiVal = rsi(candles.closes, 14);
-        sma50 = sma(candles.closes, 50);
-        sma200 = sma(candles.closes, 200);
-        chg1w = pctChange(candles.closes, 5);
-        from52 = fromHigh(candles.highs.length ? candles.highs : candles.closes, candles.closes[candles.closes.length - 1]);
-        const recentVolumes = candles.volumes.filter((v) => Number.isFinite(v) && v >= 0).slice(-20);
-        if (recentVolumes.length) avgVolume20d = recentVolumes.reduce((sum, v) => sum + v, 0) / recentVolumes.length / 1_000_000;
-      }
+    const [candles, analystTargets] = await Promise.all([
+      CANDLE_SOURCE === "none"
+        ? Promise.resolve(null)
+        : CANDLE_SOURCE === "finnhub" ? fetchCandles(symbol, FINNHUB) : fetchYahooCandles(symbol),
+      fetchYahooAnalystTargets(symbol),
+    ]);
+
+    if (candles?.closes.length) {
+      rsiVal = rsi(candles.closes, 14);
+      sma50 = sma(candles.closes, 50);
+      sma200 = sma(candles.closes, 200);
+      chg1w = pctChange(candles.closes, 5);
+      from52 = fromHigh(candles.highs.length ? candles.highs : candles.closes, candles.closes[candles.closes.length - 1]);
+      const recentVolumes = candles.volumes.filter((v) => Number.isFinite(v) && v >= 0).slice(-20);
+      if (recentVolumes.length) avgVolume20d = recentVolumes.reduce((sum, v) => sum + v, 0) / recentVolumes.length / 1_000_000;
     }
     if (from52 == null && metrics.high52 && quote.price) from52 = ((quote.price - metrics.high52) / metrics.high52) * 100;
     const chg1d = quote.price && quote.prevClose ? ((quote.price - quote.prevClose) / quote.prevClose) * 100 : null;
@@ -66,6 +72,13 @@ async function build(symbol: string): Promise<Row | null> {
       name: profile.name ?? symbol,
       sector: profile.sector,
       price: quote.price ?? null,
+      ...(analystTargets ? {
+        analyst_target_low: round(analystTargets.low, 2),
+        analyst_target_median: round(analystTargets.median, 2),
+        analyst_target_mean: round(analystTargets.mean, 2),
+        analyst_target_high: round(analystTargets.high, 2),
+        analyst_target_updated_at: new Date().toISOString(),
+      } : {}),
       market_cap: metrics.marketCap != null ? round(metrics.marketCap / 1000, 1) : null,
       avg_volume_20d: round(avgVolume20d, 2),
       pe: round(metrics.pe), forward_pe: round(metrics.forwardPe), pb: round(metrics.pb), ps: round(metrics.ps),

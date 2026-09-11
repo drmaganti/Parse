@@ -69,6 +69,11 @@ export interface StockRow {
   name: string;
   sector: string | null;
   price: number | null;
+  analyst_target_low: number | null;
+  analyst_target_median: number | null;
+  analyst_target_mean: number | null;
+  analyst_target_high: number | null;
+  analyst_target_updated_at?: string | null;
   market_cap: number | null;
   avg_volume_20d: number | null;
   pe: number | null;
