@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { fallbackParse } from "../lib/fallback-parse-span";
 import { analystTargetMetrics } from "../lib/analyst-targets";
+import { parseWithCriterionLedgerHardened } from "../lib/criterion-ledger-hardened";
 
 function has(query: string, field: string, op: string, value: number) {
   const parsed = fallbackParse(query);
@@ -24,4 +25,14 @@ assert.deepEqual(metrics, {
   target_risk_reward: 3,
 });
 
-console.log("Analyst target regressions passed.");
+async function verifyLivePath() {
+  const livePath = await parseWithCriterionLedgerHardened("Stocks trading below the lowest analyst target");
+  assert(livePath.filters.some((f) => f.field === "lowTargetReturn" && f.op === ">" && f.value === 0));
+  assert.equal(livePath.diagnostics.llmCalls, 0);
+  console.log("Analyst target regressions and live criterion-ledger path passed.");
+}
+
+verifyLivePath().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
