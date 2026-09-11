@@ -37,8 +37,13 @@ interface Row {
 
 async function build(symbol: string): Promise<Row | null> {
   try {
-    const [profile, metrics, quote] = await Promise.all([
-      fetchProfile(symbol, FINNHUB), fetchMetrics(symbol, FINNHUB), fetchQuote(symbol, FINNHUB),
+    const [profile, metrics, candles, analystTargets] = await Promise.all([
+      fetchProfile(symbol, FINNHUB),
+      fetchMetrics(symbol, FINNHUB),
+      CANDLE_SOURCE === "none"
+        ? Promise.resolve(null)
+        : CANDLE_SOURCE === "finnhub" ? fetchCandles(symbol, FINNHUB) : fetchYahooCandles(symbol),
+      fetchYahooAnalystTargets(symbol),
     ]);
 
     let rsiVal: number | null = null;
@@ -47,13 +52,6 @@ async function build(symbol: string): Promise<Row | null> {
     let from52: number | null = null;
     let chg1w: number | null = null;
     let avgVolume20d: number | null = null;
-
-    const [candles, analystTargets] = await Promise.all([
-      CANDLE_SOURCE === "none"
-        ? Promise.resolve(null)
-        : CANDLE_SOURCE === "finnhub" ? fetchCandles(symbol, FINNHUB) : fetchYahooCandles(symbol),
-      fetchYahooAnalystTargets(symbol),
-    ]);
 
     if (candles?.closes.length) {
       rsiVal = rsi(candles.closes, 14);
@@ -64,14 +62,24 @@ async function build(symbol: string): Promise<Row | null> {
       const recentVolumes = candles.volumes.filter((v) => Number.isFinite(v) && v >= 0).slice(-20);
       if (recentVolumes.length) avgVolume20d = recentVolumes.reduce((sum, v) => sum + v, 0) / recentVolumes.length / 1_000_000;
     }
-    if (from52 == null && metrics.high52 && quote.price) from52 = ((quote.price - metrics.high52) / metrics.high52) * 100;
-    const chg1d = quote.price && quote.prevClose ? ((quote.price - quote.prevClose) / quote.prevClose) * 100 : null;
+
+    const closes = candles?.closes ?? [];
+    let price = closes.length ? closes[closes.length - 1] : null;
+    let prevClose = closes.length > 1 ? closes[closes.length - 2] : null;
+    if (price == null || prevClose == null) {
+      const quote = await fetchQuote(symbol, FINNHUB);
+      price ??= quote.price ?? null;
+      prevClose ??= quote.prevClose ?? null;
+    }
+
+    if (from52 == null && metrics.high52 && price) from52 = ((price - metrics.high52) / metrics.high52) * 100;
+    const chg1d = price && prevClose ? ((price - prevClose) / prevClose) * 100 : null;
 
     return {
       symbol,
       name: profile.name ?? symbol,
       sector: profile.sector,
-      price: quote.price ?? null,
+      price,
       ...(analystTargets ? {
         analyst_target_low: round(analystTargets.low, 2),
         analyst_target_median: round(analystTargets.median, 2),
