@@ -10,7 +10,7 @@ const T = { bg: "#F4F5F7", surface: "#FFFFFF", surfaceAlt: "#FAFBFC", border: "#
 const DISP = "var(--font-display), 'Instrument Sans', system-ui, sans-serif";
 const MONO = "var(--font-mono), 'JetBrains Mono', ui-monospace, monospace";
 const CATEGORIES = ["All", "Value", "Quality", "Growth", "Income", "Momentum", "Pullback"] as const;
-const FEATURED = ["high-roic-companies", "quality-compounders", "high-fcf-yield", "strong-balance-sheets", "high-growth-reasonable-valuation", "high-dividend-low-volatility-stocks"];
+const FEATURED = ["stocks-below-lowest-analyst-target", "high-roic-companies", "quality-compounders", "high-fcf-yield", "strong-balance-sheets", "high-growth-reasonable-valuation", "high-dividend-low-volatility-stocks"];
 
 export default function ScreenMarketplace({ screens, community }: Props) {
   const [search, setSearch] = useState("");
