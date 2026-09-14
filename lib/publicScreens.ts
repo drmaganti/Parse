@@ -8,6 +8,7 @@ export type PublicScreen = {
 };
 
 export const PUBLIC_SCREENS: PublicScreen[] = [
+  { slug:"stocks-below-lowest-analyst-target", title:"Stocks below the lowest analyst target", query:"Stocks trading below the lowest analyst price target", summary:"Lists stocks whose current market price is below even the lowest available analyst consensus price target.", criteria:["Current price below low analyst target","Low-target return above 0%","Analyst targets refreshed nightly"], category:"pullback" },
   { slug:"quality-compounders", title:"Quality compounders", query:"Companies with ROIC above 15%, operating margin above 15%, and 3-year revenue growth above 8%", summary:"Durable businesses combining efficient capital allocation, healthy margins, and sustained top-line growth.", criteria:["ROIC above 15%","Operating margin above 15%","3-year revenue growth above 8%"], category:"quality" },
   { slug:"high-roic-companies", title:"High ROIC companies", query:"Companies with ROIC above 20%, ranked by ROIC", summary:"Looks for businesses generating strong returns on the capital invested in their operations.", criteria:["ROIC above 20%","Ranked by ROIC","Long-term fundamental quality"], category:"quality" },
   { slug:"high-fcf-yield", title:"High free-cash-flow yield", query:"Companies with free cash flow yield above 5% and positive operating margins", summary:"Finds companies producing meaningful free cash flow relative to their market value.", criteria:["FCF yield above 5%","Positive operating margin","Cash-flow valuation focus"], category:"value" },
