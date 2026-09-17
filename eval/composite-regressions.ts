@@ -53,7 +53,7 @@ async function run() {
       { field: "pe", op: ">=", value: 10 },
       { field: "pe", op: "<=", value: 20 },
       { field: "pb", op: "<", value: 4 },
-      { field: "marketCap", op: ">", value: 100 },
+      { field: "marketCap", op: ">", value: 50 },
       { field: "sector", op: "!=", value: "Technology" },
     ],
     "value",
@@ -64,7 +64,7 @@ async function run() {
     "Large non-tech companies with low P/E",
     [
       { field: "pe", op: "<", value: 20 },
-      { field: "marketCap", op: ">", value: 100 },
+      { field: "marketCap", op: ">", value: 50 },
       { field: "sector", op: "!=", value: "Technology" },
     ]
   );

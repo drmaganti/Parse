@@ -224,7 +224,7 @@ function parseFresh(query: string): ParsedScreen {
   }
 
   if (/mega[- ]?cap|very large companies/.test(genericQ) && !out.some((f) => f.field === "marketCap")) addUnique(out, mk("marketCap", ">", 200));
-  else if (/large[- ]?cap|\bbig companies\b|\blarge companies\b/.test(genericQ) && !out.some((f) => f.field === "marketCap")) addUnique(out, mk("marketCap", ">", 100));
+  else if (/large[- ]?cap|\bbig companies\b|\blarge companies\b/.test(genericQ) && !out.some((f) => f.field === "marketCap")) addUnique(out, mk("marketCap", ">", 50));
   if (/small[- ]?cap/.test(genericQ) && !out.some((f) => f.field === "marketCap")) addUnique(out, mk("marketCap", "<", 20));
 
   addSectorFilters(out, q);
