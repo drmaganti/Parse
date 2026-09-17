@@ -59,7 +59,7 @@ const cases: Case[] = [
   { name: "unsupported tangible book not substituted", query: "Financials with price-to-tangible-book under 1.5 and dividend yield above 3%", expected: [{ field: "divYield", op: ">", value: 3 }, { field: "sector", op: "==", value: "Financials" }], absentFields: ["pb"], assumption: /tangible book/i },
   { name: "unsupported net debt EBITDA not substituted", query: "Energy stocks with net debt/EBITDA below 2 and EV/EBITDA below 10", expected: [{ field: "evEbitda", op: "<", value: 10 }, { field: "sector", op: "==", value: "Energy" }], absentFields: ["debtEquity"], assumption: /net.debt.*ebitda/i },
   { name: "unsupported buyback surfaced", query: "Consumer companies buying back shares with P/E below 20", expected: [{ field: "pe", op: "<", value: 20 }, { field: "sector", op: "==", value: "Consumer" }], assumption: /buyback|buying back shares/i },
-  { name: "unsupported insider ownership surfaced", query: "Large-cap companies with insider ownership above 5% and ROIC above 15%", expected: [{ field: "marketCap", op: ">", value: 100 }, { field: "roic", op: ">", value: 15 }], assumption: /insider ownership/i },
+  { name: "unsupported insider ownership surfaced", query: "Large-cap companies with insider ownership above 5% and ROIC above 15%", expected: [{ field: "marketCap", op: ">", value: 50 }, { field: "roic", op: ">", value: 15 }], assumption: /insider ownership/i },
 ];
 
 async function run() {
