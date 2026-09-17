@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { investorCollection } from "../../../lib/investorCollections";
 import { supabasePublic } from "../../../lib/supabase-server";
+import ParseBrand from "../../../components/ParseBrand";
 
 export const dynamic = "force-dynamic";
 const collection = investorCollection("warren-buffett")!;
@@ -29,10 +30,10 @@ export default async function BuffettPage() {
   const jsonLd = { "@context": "https://schema.org", "@type": "Dataset", name: collection.title, description: collection.description, url: "https://getparse.app/investors/warren-buffett", temporalCoverage: latestDate || undefined, creator: { "@type": "Organization", name: "Parse" }, isBasedOn: secUrl };
   return <div style={{ minHeight: "100vh", background: T.bg, color: T.ink, fontFamily: "var(--font-body), 'Inter', system-ui, sans-serif" }}>
     <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-    <header style={{ borderBottom: `1px solid ${T.border}` }}><div style={{ maxWidth: 1080, margin: "0 auto", padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><a href="/" style={{ color: T.ink, textDecoration: "none", fontFamily: DISP, fontWeight: 600, fontSize: 18 }}>Parse</a><div style={{ display: "flex", gap: 16 }}><a href="/investors" style={{ color: T.accent, textDecoration: "none" }}>Investors</a><a href="/screens" style={{ color: T.accent, textDecoration: "none" }}>Screen ideas</a></div></div></header>
+    <header style={{ borderBottom: `1px solid ${T.border}` }}><div style={{ maxWidth: 1080, margin: "0 auto", padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><ParseBrand /><div style={{ display: "flex", gap: 16, fontSize: 14 }}><a href="/investors" style={{ color: T.accent, textDecoration: "none" }}>Investors</a><a href="/screens" style={{ color: T.accent, textDecoration: "none" }}>Screen ideas</a></div></div></header>
     <main style={{ maxWidth: 1080, margin: "0 auto", padding: "48px 24px 84px" }}>
       <nav aria-label="Breadcrumb" style={{ fontSize: 13, color: T.inkSoft, marginBottom: 18 }}><a href="/investors" style={{ color: T.accent, textDecoration: "none" }}>Investor portfolios</a> / Warren Buffett</nav>
-      <h1 style={{ fontFamily: DISP, fontSize: 42, lineHeight: 1.06, letterSpacing: "-.03em", margin: "0 0 14px", fontWeight: 650 }}>Warren Buffett stocks: Berkshire Hathaway portfolio & holdings</h1>
+      <h1 className="site-page-title" style={{ margin: "0 0 14px" }}>Warren Buffett stocks: Berkshire Hathaway portfolio & holdings</h1>
       <p style={{ maxWidth: 820, color: T.inkSoft, fontSize: 16.5, lineHeight: 1.62, margin: 0 }}>Commonly searched as Warren Buffett's stock portfolio, this page tracks Berkshire Hathaway's latest reported U.S. Form 13F equity holdings. The filing is delayed, does not cover every Berkshire investment, and should not be read as Buffett's personal brokerage account.</p>
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 16, fontSize: 13, color: T.inkSoft }}>{latestDate && <span>Report date: <strong>{latestDate}</strong></span>}{filingDate && <span>Filed: <strong>{filingDate}</strong></span>}<a href={secUrl} target="_blank" rel="noreferrer" style={{ color: T.accent }}>Source: SEC 13F ↗</a></div>
 

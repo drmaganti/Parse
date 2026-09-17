@@ -2,21 +2,14 @@
 
 import React from "react";
 import FeedbackButton from "../../components/FeedbackButton";
+import ParseBrand from "../../components/ParseBrand";
 
 const T = {
   bg: "#F4F5F7", surface: "#FFFFFF", surfaceAlt: "#FAFBFC", border: "#E6E8EC",
   ink: "#15171C", inkSoft: "#565C67", accent: "#2C36A8", accentInk: "#232A85",
 };
-const DISP = "'Space Grotesk', system-ui, sans-serif";
+const DISP = "var(--font-display), 'Instrument Sans', system-ui, sans-serif";
 const MONO = "'JetBrains Mono', ui-monospace, monospace";
-
-function Logo() {
-  return <div style={{ width: 26, height: 26, borderRadius: 7, background: T.accent, position: "relative", flexShrink: 0 }}>
-    <div style={{ position: "absolute", left: 6, bottom: 6, width: 3, height: 8, background: "#fff", borderRadius: 1 }} />
-    <div style={{ position: "absolute", left: 11.5, bottom: 6, width: 3, height: 13, background: "#fff", borderRadius: 1 }} />
-    <div style={{ position: "absolute", left: 17, bottom: 6, width: 3, height: 5, background: "rgba(255,255,255,0.6)", borderRadius: 1 }} />
-  </div>;
-}
 
 const STEPS = [
   ["01", "Describe the idea", "Write the screen the way you would explain it to another person."],
@@ -35,7 +28,7 @@ const DOCUMENTED_DEFAULTS = [
 
 export default function Methodology() {
   return (
-    <div style={{ minHeight: "100vh", background: T.bg, color: T.ink, fontFamily: "'Inter', system-ui, sans-serif" }}>
+    <div style={{ minHeight: "100vh", background: T.bg, color: T.ink, fontFamily: "var(--font-body), 'Inter', system-ui, sans-serif" }}>
       <style>{`
         .m-btn{display:inline-flex;align-items:center;justify-content:center;height:36px;padding:0 14px;border-radius:9px;border:1px solid transparent;text-decoration:none;font:550 13.5px Inter,system-ui,sans-serif;cursor:pointer}
         .m-primary{background:${T.accent};color:#fff}.m-primary:hover{background:${T.accentInk}}
@@ -45,15 +38,15 @@ export default function Methodology() {
       `}</style>
       <header style={{ borderBottom: `1px solid ${T.border}` }}>
         <div style={{ maxWidth: 920, margin: "0 auto", padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <a href="/" style={{ display: "inline-flex", gap: 10, alignItems: "center", textDecoration: "none", color: T.ink }}><Logo /><span style={{ fontFamily: DISP, fontWeight: 600 }}>Parse</span></a>
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}><FeedbackButton className="m-btn m-ghost" /><a href="/try" className="m-btn m-primary">Try Parse</a></div>
+          <ParseBrand />
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}><FeedbackButton className="m-btn m-ghost mobile-hide" /><a href="/try" className="m-btn m-primary">Try Parse</a></div>
         </div>
       </header>
 
       <main style={{ maxWidth: 920, margin: "0 auto", padding: "52px 24px 80px" }}>
         <div style={{ maxWidth: 680 }}>
           <div style={{ fontFamily: MONO, fontSize: 12, color: T.accent, letterSpacing: "0.06em", marginBottom: 12 }}>HOW PARSE WORKS</div>
-          <h1 style={{ fontFamily: DISP, fontSize: 38, lineHeight: 1.08, letterSpacing: "-0.025em", margin: "0 0 16px", fontWeight: 600 }}>The output is a screen, not an answer.</h1>
+          <h1 className="site-page-title" style={{ margin: "0 0 16px" }}>The output is a screen, not an answer.</h1>
           <p style={{ color: T.inkSoft, fontSize: 16.5, lineHeight: 1.6, margin: 0 }}>Parse uses language to help build a transparent stock screen. It does not hide the criteria behind a recommendation list.</p>
         </div>
 

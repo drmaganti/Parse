@@ -4,13 +4,10 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import { trackEvent } from "../../lib/analytics";
+import ParseBrand from "../../components/ParseBrand";
 
 const T = { bg: "#F4F5F7", surface: "#FFFFFF", border: "#E6E8EC", ink: "#15171C", inkSoft: "#565C67", accent: "#2C36A8", accentInk: "#232A85", loss: "#C33328" };
-const DISP = "'Space Grotesk', system-ui, sans-serif";
-
-function Logo() {
-  return <div style={{ width: 28, height: 28, borderRadius: 7, background: T.accent, position: "relative", flexShrink: 0 }}><div style={{ position: "absolute", left: 6.5, bottom: 6.5, width: 3, height: 8, background: "#fff", borderRadius: 1 }} /><div style={{ position: "absolute", left: 12, bottom: 6.5, width: 3, height: 13, background: "#fff", borderRadius: 1 }} /><div style={{ position: "absolute", left: 17.5, bottom: 6.5, width: 3, height: 5, background: "rgba(255,255,255,.6)", borderRadius: 1 }} /></div>;
-}
+const DISP = "var(--font-display), 'Instrument Sans', system-ui, sans-serif";
 
 export default function Account() {
   const router = useRouter();
@@ -52,10 +49,10 @@ export default function Account() {
     finally { setBusy(false); }
   };
 
-  return <div style={{ minHeight: "100vh", background: T.bg, color: T.ink, fontFamily: "'Inter', system-ui, sans-serif", display: "grid", placeItems: "center", padding: 24 }}>
+  return <div style={{ minHeight: "100vh", background: T.bg, color: T.ink, fontFamily: "var(--font-body), 'Inter', system-ui, sans-serif", display: "grid", placeItems: "center", padding: 24 }}>
     <style>{`.a-field{width:100%;box-sizing:border-box;padding:11px 13px;border:1px solid ${T.border};border-radius:10px;background:#fff;font:15px Inter,system-ui,sans-serif;color:${T.ink}}.a-field:focus{outline:none;border-color:${T.accent};box-shadow:0 0 0 3px #ECEEFA}.a-btn{width:100%;height:44px;border:0;border-radius:10px;background:${T.accent};color:#fff;font:550 14.5px Inter,system-ui,sans-serif;cursor:pointer}.a-btn:hover{background:${T.accentInk}}`}</style>
     <main style={{ width: "100%", maxWidth: 390 }}>
-      <a href="/" style={{ display: "inline-flex", gap: 10, alignItems: "center", color: T.ink, textDecoration: "none" }}><Logo /><span style={{ fontFamily: DISP, fontWeight: 600, fontSize: 18 }}>Parse</span></a>
+      <ParseBrand />
       <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, padding: 24, marginTop: 22 }}>
         <h1 style={{ fontFamily: DISP, fontSize: 26, letterSpacing: "-0.02em", margin: "0 0 6px", fontWeight: 600 }}>{mode === "signup" ? "Save your screens" : "Welcome back"}</h1>
         <p style={{ color: T.inkSoft, fontSize: 14.5, lineHeight: 1.5, margin: "0 0 22px" }}>{mode === "signup" ? "Create an account when you want to save and revisit your work." : "Sign in to reach your saved screens."}</p>

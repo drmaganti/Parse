@@ -7,6 +7,7 @@ export interface ScreenUniverse {
 }
 
 export interface ScreenState {
+  version?: 1;
   q: string;
   ranking: string;
   filters: Filter[];
@@ -17,6 +18,7 @@ const OPS = new Set<Op>(["<", "<=", ">", ">=", "==", "!=", "in"]);
 
 export function encodeScreenState(state: ScreenState): string {
   const payload = {
+    v: 1,
     q: state.q,
     r: state.ranking,
     f: state.filters.map((f) => [f.field, f.op, f.value, f.source === "user" ? 1 : f.source === "default" ? 2 : 0]),
@@ -29,6 +31,9 @@ export function decodeScreenState(raw: string | null | undefined): ScreenState |
   if (!raw) return null;
   try {
     const j = JSON.parse(decodeURIComponent(raw));
+    // Payloads without a version are legacy v0 links. Their compact shape is
+    // compatible with v1, so decoding them is the v0 -> v1 migration.
+    if (j.v !== undefined && j.v !== 1) return null;
     const filters: Filter[] = Array.isArray(j.f) ? j.f.flatMap((a: unknown, i: number) => {
       if (!Array.isArray(a) || a.length < 3) return [];
       const [field, op, value, source] = a as [string, Op, number | string, number?];
@@ -39,7 +44,7 @@ export function decodeScreenState(raw: string | null | undefined): ScreenState |
     const universe = Array.isArray(j.u) && j.u[0] === "collection" && typeof j.u[1] === "string"
       ? { type: "collection" as const, slug: j.u[1], label: typeof j.u[2] === "string" ? j.u[2] : undefined }
       : undefined;
-    return { q: typeof j.q === "string" ? j.q : "", ranking, filters, universe };
+    return { version: 1, q: typeof j.q === "string" ? j.q : "", ranking, filters, universe };
   } catch {
     return null;
   }

@@ -3,6 +3,7 @@
 import React from "react";
 import ProductDemo from "./ProductDemo";
 import FeedbackButton from "./FeedbackButton";
+import ParseBrand from "./ParseBrand";
 import { PORTFOLIO_URL, GITHUB_URL } from "../lib/site";
 import { trackEvent } from "../lib/analytics";
 
@@ -11,7 +12,7 @@ const T = {
   border: "#E6E8EC", ink: "#15171C", inkSoft: "#565C67",
   accent: "#2C36A8", accentInk: "#232A85",
 };
-const DISP = "'Space Grotesk', system-ui, sans-serif";
+const DISP = "var(--font-display), 'Instrument Sans', system-ui, sans-serif";
 
 const FEATURES = [
   { title: "Say what you mean", line: "Describe the kind of company you’re looking for in everyday language." },
@@ -28,23 +29,12 @@ const SCREEN_IDEAS = [
   ["growing-stocks-with-momentum", "Growth with momentum", "Revenue growth plus recent price strength"],
 ];
 
-function Logo({ size = 26 }: { size?: number }) {
-  const u = size / 26;
-  return (
-    <div style={{ width: size, height: size, borderRadius: 7 * u, background: T.accent, position: "relative", flexShrink: 0 }}>
-      <div style={{ position: "absolute", left: 6 * u, bottom: 6 * u, width: 3 * u, height: 8 * u, background: "#fff", borderRadius: 1 }} />
-      <div style={{ position: "absolute", left: 11.5 * u, bottom: 6 * u, width: 3 * u, height: 13 * u, background: "#fff", borderRadius: 1 }} />
-      <div style={{ position: "absolute", left: 17 * u, bottom: 6 * u, width: 3 * u, height: 5 * u, background: "rgba(255,255,255,0.6)", borderRadius: 1 }} />
-    </div>
-  );
-}
-
 export default function Landing({ mode, onGetStarted }: { mode: "home" | "about"; onGetStarted?: () => void }) {
   void mode;
   void onGetStarted;
   const trackTry = (placement: string) => trackEvent("try_parse_clicked", { placement });
   return (
-    <div style={{ fontFamily: "'Inter', system-ui, sans-serif", color: T.ink, background: T.bg, minHeight: "100vh" }}>
+    <div style={{ fontFamily: "var(--font-body), 'Inter', system-ui, sans-serif", color: T.ink, background: T.bg, minHeight: "100vh" }}>
       <style>{`
         .ln-btn { display:inline-flex; align-items:center; justify-content:center; gap:7px; font-family:inherit; font-weight:550; font-size:14.5px; height:40px; padding:0 18px; border-radius:10px; border:1px solid transparent; cursor:pointer; text-decoration:none; transition:background .14s,border-color .14s; }
         .ln-sm { height:34px; font-size:13.5px; padding:0 14px; border-radius:9px; }
@@ -64,14 +54,12 @@ export default function Landing({ mode, onGetStarted }: { mode: "home" | "about"
 
       <header style={{ borderBottom: `1px solid ${T.border}` }}>
         <div style={{ maxWidth: 1000, margin: "0 auto", padding: "14px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <a href="/" style={{ display: "inline-flex", alignItems: "center", gap: 10, textDecoration: "none", color: T.ink }}>
-            <Logo /><span style={{ fontFamily: DISP, fontSize: 17, fontWeight: 600 }}>Parse</span>
-          </a>
+          <ParseBrand />
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <a href="/screens" className="ln-btn ln-ghost ln-sm ln-screen-nav">Screen ideas</a>
             <a href="/investors" className="ln-btn ln-ghost ln-sm ln-screen-nav" onClick={() => trackEvent("investor_hub_clicked", { placement: "header" })}>Investors</a>
-            <a href="/methodology" className="ln-btn ln-ghost ln-sm">How it works</a>
-            <FeedbackButton className="ln-btn ln-ghost ln-sm" />
+            <a href="/methodology" className="ln-btn ln-ghost ln-sm mobile-hide">How it works</a>
+            <FeedbackButton className="ln-btn ln-ghost ln-sm mobile-hide" />
             <a href="/account?mode=signin" className="ln-btn ln-neutral ln-sm ln-signin">Sign in</a>
             <a href="/try" onClick={() => trackTry("header")} className="ln-btn ln-primary ln-sm">Try Parse</a>
           </div>

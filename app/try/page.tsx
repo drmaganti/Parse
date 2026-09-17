@@ -7,6 +7,7 @@ import { findFilterConflict, sameFilter } from "../../lib/filter-ops";
 import { runScreen, type ScreenResult } from "../../lib/screen";
 import { trackEvent } from "../../lib/analytics";
 import { decodeScreenState, encodeScreenState, type ScreenUniverse } from "../../lib/screen-state";
+import ParseBrand from "../../components/ParseBrand";
 
 const T = {
   bg: "#F4F5F7", surface: "#FFFFFF", surfaceAlt: "#FAFBFC", border: "#E6E8EC", borderStrong: "#D4D8DF",
@@ -66,6 +67,13 @@ export default function TryPage() {
     const exact = decodeScreenState(params.get("state"));
     const collectionSlug = params.get("collection") || exact?.universe?.slug;
     (async () => {
+      if (!previewGuestLimit && !collectionSlug && !exact?.universe) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData.session) {
+          window.location.replace(`/app${window.location.search}`);
+          return;
+        }
+      }
       if (!previewGuestLimit) {
         try {
           const countResponse = await fetch("/api/guest-runs");
@@ -96,7 +104,7 @@ export default function TryPage() {
       if (exact) {
         const issue = findFilterConflict(exact.filters);
         setInput(exact.q); setLastInterpretedInput(exact.q); setScreenQuery(exact.q); setFilters(exact.filters); setRanking(exact.ranking); setConflict(issue || "");
-        setResults(issue ? [] : runScreen(rows, exact.filters, exact.ranking, 25)); setHasRun(true); setInterpretation("Loaded an exact shared screen.");
+        setResults(issue ? [] : runScreen(rows, exact.filters, exact.ranking, 25)); setHasRun(true); setInterpretation(params.get("source")?.startsWith("public_screen:") ? "Loaded exact saved criteria for this popular screen." : "Loaded an exact shared screen.");
       } else if (initialQuery) setInput(initialQuery.slice(0, 320));
       else if (!previewGuestLimit) {
         const savedQuery = window.localStorage.getItem("parse_guest_last_query");
@@ -263,8 +271,7 @@ export default function TryPage() {
   const limitReached = runs >= 3;
 
   return <div style={{ minHeight: "100vh", background: T.bg, color: T.ink, fontFamily: "var(--font-body), 'Inter', system-ui, sans-serif" }}>
-    <style>{`.p-btn{height:40px;padding:0 16px;border-radius:10px;border:0;background:${T.accent};color:#fff;font:550 14px Inter,system-ui,sans-serif;cursor:pointer}.p-btn:disabled{opacity:.6;cursor:not-allowed}.p-btn-neutral{height:36px;padding:0 13px;border-radius:9px;border:1px solid ${T.border};background:#fff;color:${T.ink};font:550 13.5px Inter,system-ui,sans-serif;cursor:pointer}.p-link{color:${T.accent};text-decoration:none;font-size:14px}.p-query{width:100%;box-sizing:border-box;border:1px solid ${T.borderStrong};border-radius:13px;background:#fff;color:${T.ink};padding:14px 15px;font:15.5px Inter,system-ui,sans-serif;resize:vertical;min-height:56px}.p-query:focus{outline:none;border-color:${T.accent};box-shadow:0 0 0 3px ${T.accentSoft}}.p-query[aria-disabled="true"]{background:#ECEEF1;border-color:${T.border};color:${T.inkSoft};cursor:not-allowed;resize:none}.signup-benefits{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:16px 0 18px;padding:0;list-style:none}.signup-benefits li{display:flex;gap:8px;color:${T.inkSoft};font-size:13.5px;line-height:1.45}.signup-benefits li:before{content:'✓';color:${T.accent};font-weight:700}@media(max-width:640px){.signup-benefits{grid-template-columns:1fr}}`}</style>
-    <header style={{ borderBottom: `1px solid ${T.border}` }}><div style={{ maxWidth: 960, margin: "0 auto", padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><a href="/" style={{ color: T.ink, textDecoration: "none", fontFamily: DISP, fontWeight: 600, fontSize: 18 }}>Parse</a><div style={{ display: "flex", gap: 14, alignItems: "center" }}><a className="p-link" href="/screens">Screen ideas</a><a className="p-link" href="/methodology">How it works</a><a className="p-link" href="/account?mode=signin">Sign in</a></div></div></header>
+    <header style={{ borderBottom: `1px solid ${T.border}` }}><div style={{ maxWidth: 960, margin: "0 auto", padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><ParseBrand /><div style={{ display: "flex", gap: 14, alignItems: "center" }}><a className="p-link mobile-hide" href="/screens">Screen ideas</a><a className="p-link mobile-hide" href="/methodology">How it works</a><a className="p-link" href="/account?mode=signin">Sign in</a></div></div></header>
     <main style={{ maxWidth: 960, margin: "0 auto", padding: "36px 24px 72px" }}>
       <section>
         <h1 style={{ fontFamily: DISP, fontSize: 28, margin: "0 0 6px", letterSpacing: "-0.02em" }}>{reviewing ? "Review the interpretation" : hasRun ? "Refine this screen" : "Describe the screen you want"}</h1>

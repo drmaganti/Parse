@@ -7,8 +7,8 @@ const MONO = "'JetBrains Mono', ui-monospace, monospace";
 const DEMO = [
   {
     q: "Large companies with a P/E under 15",
-    note: "read “large” as market cap above $10B",
-    chips: ["Mkt cap > $10B", "P/E < 15"],
+    note: "read “large” as market cap above $100B",
+    chips: ["Mkt cap > $100B", "P/E < 15"],
     result: "27 matches",
   },
   {

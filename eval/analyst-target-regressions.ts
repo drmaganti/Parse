@@ -26,6 +26,11 @@ assert.deepEqual(metrics, {
   target_risk_reward: 3,
 });
 
+const belowAllTargets = analystTargetMetrics(80, { low: 100, median: 120, mean: 125, high: 160, analystCount: 8 });
+assert.equal(belowAllTargets.low_target_return_pct, 25);
+assert.equal(belowAllTargets.median_target_return_pct, 50);
+assert.equal(belowAllTargets.high_target_return_pct, 100);
+
 async function verifyLivePath() {
   const preset = getPublicScreen("stocks-below-lowest-analyst-target");
   assert(preset, "analyst-target preset screen should be registered");

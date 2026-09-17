@@ -4,10 +4,12 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "../lib/supabase";
 import Landing from "../components/Landing";
 import FeedbackButton from "../components/FeedbackButton";
+import ParseBrand from "../components/ParseBrand";
 import { FIELDS, RANKINGS, SECTORS, type Filter, type StockRow } from "../lib/fields";
 import { findFilterConflict, mergeDefaults, sameFilter } from "../lib/filter-ops";
 import { runScreen, type ScreenResult } from "../lib/screen";
-import { screenFingerprint, screenSlug } from "../lib/screen-state";
+import { decodeScreenState, screenFingerprint, screenSlug } from "../lib/screen-state";
+import { PUBLIC_SCREENS, publicScreenFilters, type PublicScreen } from "../lib/publicScreens";
 import { trackEvent } from "../lib/analytics";
 
 const T = {
@@ -145,11 +147,13 @@ function Screener({ user }: { user: UserState }) {
       setDataAsOf(rows.reduce((m, r) => (r.updated_at && r.updated_at > m ? r.updated_at : m), ""));
       if (sv) setSaved(sv.map((r: any) => ({ id: r.id, name: r.name, query: r.query, filters: r.filters, ranking: r.ranking, createdAt: r.created_at, updatedAt: r.updated_at, lastRunAt: r.last_run_at, lastResultCount: r.last_result_count, lastResultSymbols: r.last_result_symbols || [], criteriaFingerprint: r.criteria_fingerprint, universe: r.universe || "default" })));
 
-      const s = new URLSearchParams(window.location.search).get("s");
-      const dec = s ? decodeScreen(s) : null;
+      const params = new URLSearchParams(window.location.search);
+      const exact = decodeScreenState(params.get("state"));
+      const s = params.get("s");
+      const dec = exact ?? (s ? decodeScreen(s) : null);
       if (dec) {
         setScreenQuery(dec.q); setFilters(dec.filters); setRanking(dec.ranking);
-        setInterp("Restored a shared screen.");
+        setInterp(params.get("source")?.startsWith("public_screen:") ? "Loaded exact saved criteria for this popular screen." : "Restored a shared screen.");
         const issue = findFilterConflict(dec.filters); setConflict(issue || "");
         setResults(issue ? [] : runScreen(rows as StockRow[], dec.filters, dec.ranking, Infinity));
         setHasRun(true); setReviewing(false);
@@ -321,6 +325,18 @@ function Screener({ user }: { user: UserState }) {
     if (data) setSaved((prev) => prev.map((s) => s.id === rec.id ? { ...s, lastRunAt: data.last_run_at, lastResultCount: data.last_result_count, lastResultSymbols: data.last_result_symbols || [], criteriaFingerprint: data.criteria_fingerprint, updatedAt: data.updated_at } : s));
     trackEvent("saved_screen_run", { result_count: symbols.length, change_count: added.length + removed.length });
   };
+
+  const loadPopularScreen = (screen: PublicScreen) => {
+    const nextFilters = publicScreenFilters(screen);
+    const issue = findFilterConflict(nextFilters);
+    setScreenQuery(screen.query); setInput(""); setAssumptions([]); setActiveSavedId(null);
+    setFilters(nextFilters); setRanking(screen.state.ranking); setInterp("Loaded exact saved criteria for this popular screen.");
+    setConflict(issue || ""); setResults(issue ? [] : runScreen(stocks, nextFilters, screen.state.ranking, Infinity));
+    setHasRun(true); setReviewing(false); setSort(null); setShowAll(false);
+    syncUrl(screen.query, nextFilters, screen.state.ranking, true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    trackEvent("public_screen_loaded", { slug: screen.slug, placement: "signed_in_app" });
+  };
   const renameScreen = async (rec: SavedRow) => {
     const next = window.prompt("Rename saved screen", rec.name)?.trim().slice(0, 80);
     if (!next || next === rec.name) return;
@@ -359,6 +375,7 @@ function Screener({ user }: { user: UserState }) {
       {hasRun && !reviewing && !conflict && <section style={{ marginTop: 22 }}><Results rows={displayed} total={total} filters={filters} ranking={ranking} sort={sort} onSort={toggleSort}
         showAll={showAll} onToggleShowAll={() => setShowAll((v) => !v)} dataAsOf={dataAsOf} onSave={saveScreen} saveLabel={activeSavedId ? "Update saved screen" : "Save screen"} onShare={() => createSharedScreen("unlisted")} onPublish={() => createSharedScreen("public")} /></section>}
 
+      <section style={{ marginTop: 30 }}><PopularScreens onLoad={loadPopularScreen} /></section>
       <section style={{ marginTop: 30 }}><Saved saved={saved} onLoad={loadScreen} onDelete={deleteScreen} onRename={renameScreen} /></section>
       <section style={{ marginTop: 30 }}><Preferences preferences={preferences} onDelete={deleteDefault} /></section>
     </main>
@@ -367,12 +384,27 @@ function Screener({ user }: { user: UserState }) {
 }
 
 function TopBar({ email, onSignOut }: { email: string; onSignOut: () => void }) {
-  return <div style={{ borderBottom: `1px solid ${T.border}`, background: "rgba(244,245,247,.88)", backdropFilter: "blur(8px)", position: "sticky", top: 0, zIndex: 20 }}><div style={{ maxWidth: 1120, margin: "0 auto", padding: "13px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}><Brand /><div style={{ display: "flex", alignItems: "center", gap: 12 }}><span className="user-hide" style={{ fontSize: 13.5, color: T.inkSoft }}>{email}</span><a href="/about" className="btn btn-ghost btn-sm" style={{ textDecoration: "none" }}>About</a><FeedbackButton className="btn btn-ghost btn-sm" /><button className="btn btn-neutral btn-sm" onClick={onSignOut}>Sign out</button></div></div></div>;
+  const initial = email.trim().charAt(0).toUpperCase() || "P";
+  return <header className="app-header"><div className="app-header-inner"><Brand />
+    <nav className="app-primary-nav" aria-label="Signed-in navigation">
+      <a href="/screens">Screen ideas</a>
+      <a href="#saved-screens">Saved screens</a>
+      <a href="/investors">Investors</a>
+    </nav>
+    <details className="app-account-menu">
+      <summary aria-label={`Account menu for ${email}`}><span className="app-account-avatar" aria-hidden="true">{initial}</span><span className="app-account-email">{email}</span><span className="app-account-chevron" aria-hidden="true">⌄</span></summary>
+      <div className="app-account-popover">
+        <div className="app-account-signed-in"><span>Signed in as</span><strong>{email}</strong></div>
+        <nav className="app-mobile-nav" aria-label="Account navigation"><a href="/screens">Screen ideas</a><a href="#saved-screens">Saved screens</a><a href="/investors">Investors</a></nav>
+        <a href="/methodology">How it works</a>
+        <FeedbackButton className="app-account-action" />
+        <button className="app-signout" onClick={onSignOut}>Sign out</button>
+      </div>
+    </details>
+  </div></header>;
 }
 
-function Brand() {
-  return <div style={{ display: "flex", alignItems: "center", gap: 10 }}><div style={{ width: 26, height: 26, borderRadius: 7, background: T.accent, position: "relative", flexShrink: 0 }}><div style={{ position: "absolute", left: 6, bottom: 6, width: 3, height: 8, background: "#fff", borderRadius: 1 }} /><div style={{ position: "absolute", left: 11.5, bottom: 6, width: 3, height: 13, background: "#fff", borderRadius: 1 }} /><div style={{ position: "absolute", left: 17, bottom: 6, width: 3, height: 5, background: "rgba(255,255,255,.6)", borderRadius: 1 }} /></div><span className="disp" style={{ fontSize: 17, fontWeight: 600 }}>Parse</span></div>;
-}
+function Brand() { return <ParseBrand />; }
 
 function QueryBar({ value, onChange, onSubmit, loading, hasRun, onNew }: { value: string; onChange: (v: string) => void; onSubmit: () => void; loading: boolean; hasRun: boolean; onNew: () => void }) {
   const [idx, setIdx] = useState(0);
@@ -418,8 +450,13 @@ function Results({ rows, total, filters, ranking, sort, onSort, showAll, onToggl
   return <section><div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 10 }}><div style={{ display: "flex", alignItems: "baseline", gap: 10 }}><h2 className="disp" style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Results</h2><span className="mono" style={{ fontSize: 13, color: T.inkFaint }}>{total > rows.length ? `top ${rows.length} of ${total}` : `${total} names`} · {sort ? "manual sort" : (RANKINGS[ranking]?.label.toLowerCase() || "")}</span></div><div style={{ display: "flex", gap: 8 }}><button onClick={onShare} className="btn btn-ghost btn-sm">Share</button><button onClick={onPublish} className="btn btn-ghost btn-sm">Publish</button><button onClick={onSave} className="btn btn-secondary btn-sm">{saveLabel}</button></div></div>{rows.length === 0 ? <Empty title="No names match this screen." body="Loosen or remove a filter to widen it." /> : <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}><div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: 640 }}><thead><tr style={{ borderBottom: `1px solid ${T.border}` }}><Th style={{ textAlign: "left", paddingLeft: 16 }}>Ticker</Th><Th style={{ textAlign: "left" }}>Company</Th>{cols.map((c) => <Th key={String(c.key)} style={{ textAlign: "right" }} hot={activeCols.has(c.key as string)} onClick={() => onSort(c.key)}>{c.label}{arrow(c.key)}</Th>)}<Th style={{ textAlign: "right", paddingRight: 16 }} onClick={() => onSort("chg_1w")}>1W{arrow("chg_1w")}</Th></tr></thead><tbody>{rows.map((s) => <tr key={s.symbol} className="row-hover" style={{ borderBottom: `1px solid ${T.border}` }}><td className="mono" style={{ fontWeight: 600, padding: "11px 8px 11px 16px" }}>{s.symbol}</td><td style={{ padding: "11px 8px" }}>{s.name} <span style={{ color: T.inkFaint, fontSize: 12 }}>· {s.sector ?? "—"}</span></td>{cols.map((c) => <td key={String(c.key)} className="mono" style={{ textAlign: "right", padding: "11px 8px", color: activeCols.has(c.key as string) ? T.ink : T.inkSoft, fontWeight: activeCols.has(c.key as string) ? 600 : 400 }}>{c.fmt(s[c.key])}</td>)}<td className="mono" style={{ textAlign: "right", padding: "11px 16px 11px 8px", color: (s.chg_1w ?? 0) >= 0 ? T.gain : T.loss }}>{s.chg_1w == null ? "—" : `${s.chg_1w >= 0 ? "+" : ""}${s.chg_1w.toFixed(1)}%`}</td></tr>)}</tbody></table></div>{total > 25 && <button onClick={onToggleShowAll} style={{ width: "100%", padding: "11px 16px", background: T.surfaceAlt, border: "none", borderTop: `1px solid ${T.border}`, fontSize: 13, fontWeight: 550, color: T.accent }}>{showAll ? "Show top 25" : `Show all ${total}`}</button>}<div style={{ padding: "10px 16px", borderTop: `1px solid ${T.border}`, fontSize: 12, color: T.inkFaint }}>Daily-refreshed data{dataAsOf ? ` · as of ${formatAsOf(dataAsOf)}` : ""} · S&amp;P 500 and Nasdaq 100 · issuer-deduplicated</div></div>}</section>;
 }
 
+function PopularScreens({ onLoad }: { onLoad: (screen: PublicScreen) => void }) {
+  const featured = PUBLIC_SCREENS.slice(0, 6);
+  return <section id="popular-screeners" className="anchor-section"><div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 12 }}><div><h2 className="disp" style={{ fontSize: 18, fontWeight: 600, margin: "0 0 4px" }}>Frequently used screeners</h2><p style={{ margin: 0, color: T.inkSoft, fontSize: 13.5 }}>Start instantly with exact, editable criteria.</p></div><a href="/screens" style={{ color: T.accent, textDecoration: "none", fontSize: 13.5, whiteSpace: "nowrap" }}>Browse all {PUBLIC_SCREENS.length} →</a></div><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 12 }}>{featured.map((screen) => <button key={screen.slug} onClick={() => onLoad(screen)} style={{ textAlign: "left", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 15px", color: T.ink }}><div className="disp" style={{ fontSize: 14.5, fontWeight: 600, marginBottom: 6 }}>{screen.title}</div><div style={{ color: T.inkSoft, fontSize: 12.5, lineHeight: 1.45 }}>{screen.criteria.slice(0, 2).join(" · ")}</div><div style={{ color: T.accent, fontSize: 12.5, fontWeight: 600, marginTop: 10 }}>Run screen →</div></button>)}</div></section>;
+}
+
 function Saved({ saved, onLoad, onDelete, onRename }: { saved: SavedRow[]; onLoad: (s: SavedRow) => void; onDelete: (id: string) => void; onRename: (s: SavedRow) => void }) {
-  return <section><h2 className="disp" style={{ fontSize: 18, fontWeight: 600, margin: "0 0 12px" }}>Saved screens</h2>{saved.length === 0 ? <Empty title="No saved screens yet." body="Build one above, then save it to run it again anytime." /> : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 12 }}>{saved.map((s) => <div key={s.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 15px", display: "flex", flexDirection: "column", gap: 10 }}><div style={{ fontSize: 14, fontWeight: 550 }}>{s.name}</div><div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>{s.filters.slice(0, 3).map((f) => <span key={f.id} className="mono" style={{ fontSize: 11.5, padding: "3px 7px", borderRadius: 6, background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.inkSoft }}>{formatFilter(f)}</span>)}{s.filters.length > 3 && <span style={{ fontSize: 11.5, color: T.inkFaint }}>+{s.filters.length - 3}</span>}</div><div style={{ fontSize: 11.5, color: T.inkFaint }}>{s.lastResultCount == null ? "No baseline yet" : `${s.lastResultCount} matches`}{s.lastRunAt ? ` · Last run ${formatAsOf(s.lastRunAt)}` : ""}</div><div style={{ display: "flex", gap: 8, marginTop: "auto" }}><button className="btn btn-primary btn-sm" onClick={() => onLoad(s)} style={{ flex: 1 }}>Run</button><button className="btn btn-neutral btn-sm" onClick={() => onRename(s)}>Rename</button><button className="btn btn-neutral btn-sm" onClick={() => onDelete(s.id)}>Delete</button></div></div>)}</div>}</section>;
+  return <section id="saved-screens" className="anchor-section"><h2 className="disp" style={{ fontSize: 18, fontWeight: 600, margin: "0 0 12px" }}>Saved screens</h2>{saved.length === 0 ? <Empty title="No saved screens yet." body="Build one above, then save it to run it again anytime." /> : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 12 }}>{saved.map((s) => <div key={s.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 15px", display: "flex", flexDirection: "column", gap: 10 }}><div style={{ fontSize: 14, fontWeight: 550 }}>{s.name}</div><div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>{s.filters.slice(0, 3).map((f) => <span key={f.id} className="mono" style={{ fontSize: 11.5, padding: "3px 7px", borderRadius: 6, background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.inkSoft }}>{formatFilter(f)}</span>)}{s.filters.length > 3 && <span style={{ fontSize: 11.5, color: T.inkFaint }}>+{s.filters.length - 3}</span>}</div><div style={{ fontSize: 11.5, color: T.inkFaint }}>{s.lastResultCount == null ? "No baseline yet" : `${s.lastResultCount} matches`}{s.lastRunAt ? ` · Last run ${formatAsOf(s.lastRunAt)}` : ""}</div><div style={{ display: "flex", gap: 8, marginTop: "auto" }}><button className="btn btn-primary btn-sm" onClick={() => onLoad(s)} style={{ flex: 1 }}>Run</button><button className="btn btn-neutral btn-sm" onClick={() => onRename(s)}>Rename</button><button className="btn btn-neutral btn-sm" onClick={() => onDelete(s.id)}>Delete</button></div></div>)}</div>}</section>;
 }
 
 function Preferences({ preferences, onDelete }: { preferences: PreferenceRow[]; onDelete: (id: string) => void }) {
@@ -437,13 +474,13 @@ const mult = (v: any) => v == null ? "—" : Number(v).toFixed(1) + "×";
 const ALL_COLS: Record<string, Col> = {
   forward_pe: { key: "forward_pe", label: "Forward P/E", fmt: (v) => fmtNum(v) }, peg: { key: "peg", label: "PEG", fmt: (v) => fmtNum(v, 2) }, forward_peg: { key: "forward_peg", label: "Forward PEG", fmt: (v) => fmtNum(v, 2) }, earnings_yield: { key: "earnings_yield", label: "Earnings yield", fmt: pct },
   analyst_target_low: { key: "analyst_target_low", label: "Low target", fmt: (v) => v == null ? "—" : `$${Number(v).toFixed(2)}` }, analyst_target_median: { key: "analyst_target_median", label: "Median target", fmt: (v) => v == null ? "—" : `$${Number(v).toFixed(2)}` }, analyst_target_mean: { key: "analyst_target_mean", label: "Mean target", fmt: (v) => v == null ? "—" : `$${Number(v).toFixed(2)}` }, analyst_target_high: { key: "analyst_target_high", label: "High target", fmt: (v) => v == null ? "—" : `$${Number(v).toFixed(2)}` },
-  analyst_count: { key: "analyst_count", label: "Analysts", fmt: (v) => fmtNum(v, 0) }, low_target_return_pct: { key: "low_target_return_pct", label: "Low return", fmt: pct }, median_target_return_pct: { key: "median_target_return_pct", label: "Median return", fmt: pct }, high_target_return_pct: { key: "high_target_return_pct", label: "High return", fmt: pct }, target_spread_pct: { key: "target_spread_pct", label: "Target spread", fmt: pct }, target_risk_reward: { key: "target_risk_reward", label: "Reward/risk", fmt: mult },
+  analyst_count: { key: "analyst_count", label: "Analysts", fmt: (v) => fmtNum(v, 0) }, low_target_return_pct: { key: "low_target_return_pct", label: "% to low target", fmt: pct }, median_target_return_pct: { key: "median_target_return_pct", label: "% to median target", fmt: pct }, high_target_return_pct: { key: "high_target_return_pct", label: "% to high target", fmt: pct }, target_spread_pct: { key: "target_spread_pct", label: "Target spread", fmt: pct }, target_risk_reward: { key: "target_risk_reward", label: "Reward/risk", fmt: mult },
   div_growth_5y: { key: "div_growth_5y", label: "Div gr. 5Y", fmt: pct }, payout_ratio: { key: "payout_ratio", label: "Payout", fmt: pct }, roe: { key: "roe", label: "ROE TTM", fmt: pct }, gross_margin: { key: "gross_margin", label: "Gross margin", fmt: pct }, current_ratio: { key: "current_ratio", label: "Current ratio", fmt: (v) => fmtNum(v, 2) }, quick_ratio: { key: "quick_ratio", label: "Quick ratio", fmt: (v) => fmtNum(v, 2) },
   price: { key: "price", label: "Price", fmt: (v) => v == null ? "—" : `$${Number(v).toFixed(2)}` }, market_cap: { key: "market_cap", label: "Mkt cap", fmt: (v) => v == null ? "—" : `$${v}B` }, avg_volume_20d: { key: "avg_volume_20d", label: "Avg vol 20D", fmt: (v) => v == null ? "—" : `${Number(v).toFixed(2)}M` }, pe: { key: "pe", label: "P/E", fmt: (v) => fmtNum(v) }, pb: { key: "pb", label: "P/B", fmt: (v) => fmtNum(v) }, ps: { key: "ps", label: "P/S", fmt: (v) => fmtNum(v) }, div_yield: { key: "div_yield", label: "Yield", fmt: pct }, beta: { key: "beta", label: "Beta", fmt: (v) => fmtNum(v, 2) }, rev_growth: { key: "rev_growth", label: "Rev gr.", fmt: pct },
   roic: { key: "roic", label: "ROIC FY", fmt: pct }, operating_margin: { key: "operating_margin", label: "Op. margin", fmt: pct }, fcf_margin: { key: "fcf_margin", label: "FCF margin FY", fmt: pct }, fcf_yield: { key: "fcf_yield", label: "FCF yield", fmt: pct }, debt_equity: { key: "debt_equity", label: "Debt/equity", fmt: (v) => fmtNum(v, 2) }, interest_coverage: { key: "interest_coverage", label: "Interest cover", fmt: mult }, rev_growth_3y: { key: "rev_growth_3y", label: "Rev gr. 3Y", fmt: pct }, eps_growth_3y: { key: "eps_growth_3y", label: "EPS gr. 3Y", fmt: pct }, ev_ebitda: { key: "ev_ebitda", label: "EV/EBITDA", fmt: mult },
   rsi: { key: "rsi", label: "RSI", fmt: (v) => fmtNum(v, 0) }, from_52w_high: { key: "from_52w_high", label: "% off high", fmt: pct },
 };
-const RANK_COL: Record<string, keyof StockRow> = { value: "pe", quality: "rev_growth", dividend: "div_yield", momentum: "chg_1w", decline: "from_52w_high", marketCap: "market_cap" };
+const RANK_COL: Record<string, keyof StockRow> = { value: "pe", quality: "rev_growth", dividend: "div_yield", momentum: "chg_1w", decline: "from_52w_high", roic: "roic", marketCap: "market_cap" };
 function buildColumns(filters: Filter[], ranking: string): Col[] { const order: string[] = []; const add = (c?: string) => { if (c && c !== "chg_1w" && ALL_COLS[c] && !order.includes(c)) order.push(c); }; ["price", "from_52w_high", "market_cap"].forEach(add); filters.forEach((f) => { const m = FIELDS[f.field]; if (m?.kind === "num") add(m.col); }); add(RANK_COL[ranking] as string); return order.map((c) => ALL_COLS[c]); }
 
 function encodeScreen(q: string, filters: Filter[], ranking: string): string { const payload = { q, r: ranking, f: filters.map((f) => [f.field, f.op, f.value, f.source === "user" ? 1 : f.source === "default" ? 2 : 0]) }; return encodeURIComponent(JSON.stringify(payload)); }

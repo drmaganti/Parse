@@ -30,9 +30,9 @@ export const FIELDS: Record<string, FieldMeta> = {
   analystTargetMean:{ key: "analystTargetMean", col: "analyst_target_mean", label: "Mean analyst target", kind: "num", unit: "$" },
   analystTargetHigh:{ key: "analystTargetHigh", col: "analyst_target_high", label: "High analyst target", kind: "num", unit: "$" },
   analystCount:{ key: "analystCount", col: "analyst_count", label: "Analyst count", kind: "num" },
-  lowTargetReturn:{ key: "lowTargetReturn", col: "low_target_return_pct", label: "Low-target return", kind: "num", unit: "%" },
-  medianTargetReturn:{ key: "medianTargetReturn", col: "median_target_return_pct", label: "Median-target return", kind: "num", unit: "%" },
-  highTargetReturn:{ key: "highTargetReturn", col: "high_target_return_pct", label: "High-target return", kind: "num", unit: "%" },
+  lowTargetReturn:{ key: "lowTargetReturn", col: "low_target_return_pct", label: "% to low target", kind: "num", unit: "%" },
+  medianTargetReturn:{ key: "medianTargetReturn", col: "median_target_return_pct", label: "% to median target", kind: "num", unit: "%" },
+  highTargetReturn:{ key: "highTargetReturn", col: "high_target_return_pct", label: "% to high target", kind: "num", unit: "%" },
   targetSpread:{ key: "targetSpread", col: "target_spread_pct", label: "Analyst target spread", kind: "num", unit: "%" },
   targetRiskReward:{ key: "targetRiskReward", col: "target_risk_reward", label: "Target reward/risk", kind: "num", unit: "×" },
   revGrowth:   { key: "revGrowth",   col: "rev_growth",    label: "Rev growth", kind: "num", unit: "%" },
@@ -132,6 +132,7 @@ export const RANKINGS: Record<string, Ranking> = {
   dividend:  { key: "dividend",  label: "Highest yield",       score: (s) => -n(s.div_yield) },
   momentum:  { key: "momentum",  label: "Strongest momentum", score: (s) => -(n(s.chg_1w) * 2 + (100 + n(s.from_52w_high))) },
   decline:   { key: "decline",   label: "Most beaten-down",    score: (s) => n(s.chg_1w) },
+  roic:      { key: "roic",      label: "Highest ROIC",        score: (s) => -n(s.roic) },
   marketCap: { key: "marketCap", label: "Largest first",       score: (s) => -n(s.market_cap) },
 };
 

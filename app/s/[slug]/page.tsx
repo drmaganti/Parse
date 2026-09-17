@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { FIELDS, RANKINGS, type Filter, type StockRow } from "../../../lib/fields";
 import { runScreen } from "../../../lib/screen";
 import { encodeScreenState } from "../../../lib/screen-state";
+import ParseBrand from "../../../components/ParseBrand";
 import { supabaseServer } from "../../../lib/supabase-server";
 
 export const dynamic = "force-dynamic";
@@ -50,10 +51,10 @@ export default async function SharedScreen({ params }: { params: { slug: string 
   const state = encodeScreenState({ q: screen.query || screen.title, filters: screen.filters, ranking: screen.ranking });
   const tryUrl = `/try?state=${state}&source=${screen.visibility === "public" ? "public_screen" : "shared_screen"}`;
   return <div style={{ minHeight: "100vh", background: T.bg, color: T.ink, fontFamily: "var(--font-body), 'Inter', system-ui, sans-serif" }}>
-    <header style={{ borderBottom: `1px solid ${T.border}` }}><div style={{ maxWidth: 980, margin: "0 auto", padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><a href="/" style={{ color: T.ink, textDecoration: "none", fontFamily: DISP, fontWeight: 600, fontSize: 18 }}>Parse</a><a href="/screens" style={{ color: T.accent, textDecoration: "none", fontSize: 14 }}>Browse screens</a></div></header>
+    <header style={{ borderBottom: `1px solid ${T.border}` }}><div style={{ maxWidth: 980, margin: "0 auto", padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><ParseBrand /><a href="/screens" style={{ color: T.accent, textDecoration: "none", fontSize: 14 }}>Browse screens</a></div></header>
     <main style={{ maxWidth: 980, margin: "0 auto", padding: "52px 24px 84px" }}>
       <div style={{ color: T.accent, fontSize: 12, fontWeight: 650, letterSpacing: ".06em", marginBottom: 10 }}>{screen.visibility === "public" ? "PUBLIC SCREEN" : "SHARED SCREEN"}</div>
-      <h1 style={{ fontFamily: DISP, fontSize: 38, lineHeight: 1.08, letterSpacing: "-.025em", margin: "0 0 12px", fontWeight: 600 }}>{screen.title}</h1>
+      <h1 className="site-page-title" style={{ margin: "0 0 12px" }}>{screen.title}</h1>
       {screen.query && <p style={{ color: T.inkSoft, fontSize: 16, lineHeight: 1.55, margin: "0 0 24px", maxWidth: 760 }}>{screen.query}</p>}
       <section style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 15, padding: 20 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "baseline" }}><h2 style={{ fontFamily: DISP, fontSize: 18, margin: 0 }}>Exact criteria</h2><span style={{ color: T.inkSoft, fontSize: 13 }}>{RANKINGS[screen.ranking]?.label || "Largest first"}</span></div><div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 13 }}>{screen.filters.map((f) => <span key={f.id} style={{ fontFamily: MONO, fontSize: 12.5, padding: "7px 9px", border: `1px solid ${T.border}`, borderRadius: 8 }}>{formatFilter(f)}</span>)}</div></section>
       <section style={{ marginTop: 20 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 10 }}><h2 style={{ fontFamily: DISP, fontSize: 20, margin: 0 }}>{results.length} companies currently match</h2><a href={tryUrl} style={{ display: "inline-flex", minHeight: 40, alignItems: "center", padding: "0 16px", borderRadius: 10, background: T.accent, color: "#fff", textDecoration: "none", fontWeight: 550, fontSize: 14 }}>Run or edit this screen</a></div>{results.length > 0 && <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>{results.slice(0, 12).map((r, i) => <div key={r.symbol} style={{ display: "grid", gridTemplateColumns: "80px 1fr auto", gap: 12, padding: "11px 14px", borderBottom: i < Math.min(results.length, 12) - 1 ? `1px solid ${T.border}` : "none", alignItems: "center" }}><span style={{ fontFamily: MONO, fontWeight: 650 }}>{r.symbol}</span><span>{r.name}</span><span style={{ color: T.inkSoft, fontSize: 12.5 }}>{r.sector || ""}</span></div>)}</div>}</section>

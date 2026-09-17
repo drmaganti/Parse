@@ -7,7 +7,7 @@ const T = {
   ink: "#15171C", inkSoft: "#565C67", border: "#E6E8EC",
   accent: "#2C36A8", accentInk: "#232A85", loss: "#C33328", surfaceAlt: "#FAFBFC",
 };
-const DISP = "'Space Grotesk', system-ui, sans-serif";
+const DISP = "var(--font-display), 'Instrument Sans', system-ui, sans-serif";
 
 export default function FeedbackButton({ className, style }: { className?: string; style?: React.CSSProperties }) {
   const [open, setOpen] = useState(false);

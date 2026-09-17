@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { INVESTOR_COLLECTIONS, investorCollection } from "../../../lib/investorCollections";
 import { supabasePublic } from "../../../lib/supabase-server";
+import ParseBrand from "../../../components/ParseBrand";
 
 export const dynamic = "force-dynamic";
 const T = { bg: "#F4F5F7", surface: "#FFFFFF", surfaceAlt: "#FAFBFC", border: "#E6E8EC", ink: "#15171C", inkSoft: "#565C67", accent: "#2C36A8", gain: "#0B8A5B", loss: "#C33328" };
@@ -70,10 +71,10 @@ export default async function InvestorPage({ params }: { params: { slug: string 
   return <div style={{ minHeight: "100vh", background: T.bg, color: T.ink, fontFamily: "var(--font-body), 'Inter', system-ui, sans-serif" }}>
     <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
     <style>{`.ip-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}@media(max-width:760px){.ip-grid{grid-template-columns:1fr}}`}</style>
-    <header style={{ borderBottom: `1px solid ${T.border}` }}><div style={{ maxWidth: 1080, margin: "0 auto", padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><a href="/" style={{ color: T.ink, textDecoration: "none", fontFamily: DISP, fontWeight: 600, fontSize: 18 }}>Parse</a><div style={{ display: "flex", gap: 16 }}><a href="/investors" style={{ color: T.accent, textDecoration: "none" }}>Investors</a><a href="/screens" style={{ color: T.accent, textDecoration: "none" }}>Screen ideas</a></div></div></header>
+    <header style={{ borderBottom: `1px solid ${T.border}` }}><div style={{ maxWidth: 1080, margin: "0 auto", padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><ParseBrand /><div style={{ display: "flex", gap: 16, fontSize: 14 }}><a href="/investors" style={{ color: T.accent, textDecoration: "none" }}>Investors</a><a href="/screens" style={{ color: T.accent, textDecoration: "none" }}>Screen ideas</a></div></div></header>
     <main style={{ maxWidth: 1080, margin: "0 auto", padding: "48px 24px 84px" }}>
       <nav aria-label="Breadcrumb" style={{ fontSize: 13, color: T.inkSoft, marginBottom: 18 }}><a href="/investors" style={{ color: T.accent, textDecoration: "none" }}>Investor portfolios</a> / {collection.searchName}</nav>
-      <h1 style={{ fontFamily: DISP, fontSize: 42, lineHeight: 1.06, letterSpacing: "-.03em", margin: "0 0 14px", fontWeight: 650 }}>{collection.title}</h1>
+      <h1 className="site-page-title" style={{ margin: "0 0 14px" }}>{collection.title}</h1>
       <p style={{ maxWidth: 840, color: T.inkSoft, fontSize: 16.5, lineHeight: 1.62, margin: 0 }}>{collection.summary} {collection.associationNote}</p>
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 16, fontSize: 13, color: T.inkSoft }}>{latestDate && <span>As of: <strong>{latestDate}</strong></span>}{filingDate && collection.source === "sec13f" && <span>Filed: <strong>{filingDate}</strong></span>}<a href={sourceUrl} target="_blank" rel="noreferrer" style={{ color: T.accent }}>Source: {collection.sourceLabel} ↗</a></div>
 

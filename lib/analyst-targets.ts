@@ -1,11 +1,13 @@
 import type { AnalystPriceTargets } from "./yahoo";
 
 export function analystTargetMetrics(price: number | null, targets: AnalystPriceTargets) {
-  const targetReturn = (target: number | null) =>
-    price != null && price > 0 && target != null ? ((target / price) - 1) * 100 : null;
-  const lowReturn = targetReturn(targets.low);
-  const medianReturn = targetReturn(targets.median);
-  const highReturn = targetReturn(targets.high);
+  // Percentage move from the current price to an analyst target.
+  // Positive means the target is above the current price; negative means below.
+  const percentToTarget = (target: number | null) =>
+    price != null && price > 0 && target != null ? ((target - price) / price) * 100 : null;
+  const lowReturn = percentToTarget(targets.low);
+  const medianReturn = percentToTarget(targets.median);
+  const highReturn = percentToTarget(targets.high);
   const spread = targets.low != null && targets.high != null && targets.median != null && targets.median > 0
     ? ((targets.high - targets.low) / targets.median) * 100
     : null;
