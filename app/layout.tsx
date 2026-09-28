@@ -2,6 +2,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 import Script from "next/script";
 import type { ReactNode } from "react";
+import { Analytics } from "@vercel/analytics/next";
 import PostHogProvider from "../components/PostHogProvider";
 
 const title = "Parse — Natural Language Stock Screener";
@@ -52,6 +53,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body>
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareJsonLd) }} />
         <PostHogProvider>{children}</PostHogProvider>
+        <Analytics />
         {gaId ? (
           <>
             <Script src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`} strategy="afterInteractive" />
