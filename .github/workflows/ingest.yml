@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
     paths:
+      - "package.json"
+      - "package-lock.json"
       - "lib/finnhub.ts"
       - "lib/yahoo.ts"
       - "scripts/ingest.ts"

@@ -7,6 +7,8 @@ on:
   push:
     branches: [main]
     paths:
+      - "package.json"
+      - "package-lock.json"
       - "scripts/ingest-investor-holdings.ts"
       - "lib/investorCollections.ts"
       - ".github/workflows/investor-holdings.yml"
