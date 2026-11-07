@@ -17,8 +17,9 @@ export function generateStaticParams() {
   return INVESTOR_COLLECTIONS.filter((c) => c.slug !== "warren-buffett").map((c) => ({ slug: c.slug }));
 }
 
-export function generateMetadata({ params }: { params: { slug: string } }): Metadata {
-  const collection = investorCollection(params.slug);
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const collection = investorCollection(slug);
   if (!collection) return {};
   const image = `/api/og?title=${encodeURIComponent(`${collection.searchName} stocks`)}&subtitle=${encodeURIComponent(`${collection.name} holdings — screen them in plain English`)}`;
   return {
@@ -36,8 +37,9 @@ function secUrl(cik: string, accession: string | undefined) {
   return `https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${accession.replace(/-/g, "")}/${accession}-index.htm`;
 }
 
-export default async function InvestorPage({ params }: { params: { slug: string } }) {
-  const collection = investorCollection(params.slug);
+export default async function InvestorPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const collection = investorCollection(slug);
   if (!collection || collection.slug === "warren-buffett") notFound();
 
   const { data } = await supabasePublic

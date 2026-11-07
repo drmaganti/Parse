@@ -12,8 +12,9 @@ export function generateStaticParams() {
   return PUBLIC_SCREENS.map((screen) => ({ slug: screen.slug }));
 }
 
-export function generateMetadata({ params }: { params: { slug: string } }): Metadata {
-  const screen = getPublicScreen(params.slug);
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const screen = getPublicScreen(slug);
   if (!screen) return {};
   const description = `${screen.summary} Open the screen in Parse to see, edit, and run the filters.`;
   const image = `/api/og?title=${encodeURIComponent(screen.title)}&subtitle=${encodeURIComponent(screen.query)}`;
@@ -26,8 +27,9 @@ export function generateMetadata({ params }: { params: { slug: string } }): Meta
   };
 }
 
-export default function PublicScreenPage({ params }: { params: { slug: string } }) {
-  const screen = getPublicScreen(params.slug);
+export default async function PublicScreenPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const screen = getPublicScreen(slug);
   if (!screen) notFound();
   const savedState = encodeScreenState({ version: 1, q: screen.query, filters: publicScreenFilters(screen), ranking: screen.state.ranking });
   const tryParams = new URLSearchParams({ state: savedState, source: `public_screen:${screen.slug}` });

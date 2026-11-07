@@ -63,8 +63,15 @@ const GROUPS: Array<{ sector: string; pattern: RegExp; promptTerms: string[] }> 
 ];
 
 function exclusionAt(query: string, start: number): boolean {
-  const prefix = query.slice(Math.max(0, start - 35), start);
-  return /\b(?:exclude|excluding|avoid|without|except|not|non[- ]?)\s*$/i.test(prefix);
+  const prefix = query.slice(0, start).split(/[;.!?]/).at(-1) ?? "";
+  const markers = [...prefix.matchAll(/\b(?:exclude|excluding|avoid|without|except|outside|not|non[- ]?)\s*/gi)];
+  const marker = markers.at(-1);
+  if (!marker) return false;
+  let scope = prefix.slice(marker.index! + marker[0].length);
+  // Carry exclusion only across sector names and list connectors. A new
+  // financial predicate or sentence ends that scope.
+  for (const group of GROUPS) scope = scope.replace(new RegExp(group.pattern.source, group.pattern.flags), "");
+  return /^(?:\s|,|&|\band\b|\bor\b)*$/i.test(scope);
 }
 
 export function matchSectorLexicon(query: string): SectorLexiconMatch[] {

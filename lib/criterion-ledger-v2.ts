@@ -145,6 +145,13 @@ function approximatelyEqual(a: number, b: number): boolean {
 // copy either the written magnitude (500) or expand it to raw dollars (500m),
 // so the compiler accepts those grounded representations and emits one unit.
 function groundedExplicitNumericValue(phrase: string, field: string, proposed: number): number | null {
+  if (field === "chg1w" && /\b(?:down|declin(?:e|ed|ing)|fallen|lost)\b/i.test(phrase)) {
+    const match = /(-?\d+(?:\.\d+)?)\s*%/.exec(phrase);
+    if (match) {
+      const magnitude = Math.abs(Number(match[1]));
+      return [magnitude, -magnitude, magnitude / 100, -magnitude / 100].some((value) => approximatelyEqual(proposed, value)) ? -magnitude : null;
+    }
+  }
   if (field === "from52wHigh" && /\b(?:below|off|within)\b/i.test(phrase) && isHighReference(phrase)) {
     const writtenMatch = /(-?\d+(?:\.\d+)?)\s*%/.exec(phrase);
     if (writtenMatch) {
@@ -158,6 +165,11 @@ function groundedExplicitNumericValue(phrase: string, field: string, proposed: n
   if (field === "marketCap") {
     const unitPattern = /(?:\$|usd\s*)?(-?\d+(?:\.\d+)?)\s*(trillion|tn|billion|bn|million|mn|mm|t|b|m)\b/gi;
     const candidates: Array<{ written: number; billions: number }> = [];
+    const sharedRange = /\b(?:between|from)\s*\$?(-?\d+(?:\.\d+)?)\s*(?:and|to)\s*\$?(-?\d+(?:\.\d+)?)\s*(trillion|tn|billion|bn|million|mn|mm|t|b|m)\b/i.exec(phrase);
+    if (sharedRange) {
+      const multiplier = /^(?:trillion|tn|t)$/i.test(sharedRange[3]) ? 1000 : /^(?:billion|bn|b)$/i.test(sharedRange[3]) ? 1 : 0.001;
+      for (const value of sharedRange.slice(1, 3)) candidates.push({ written: Number(value), billions: Number(value) * multiplier });
+    }
     for (const match of phrase.matchAll(unitPattern)) {
       const written = Number(match[1]);
       const multiplier = /^(?:trillion|tn|t)$/i.test(match[2]) ? 1000
@@ -308,8 +320,9 @@ function explicitMetricIdentity(phrase: string, field: string): "confirmed" | "c
 }
 
 function safeSemanticNumeric(phrase: string, concept: string, filter: Filter): boolean {
-  return concept === "revGrowth" && filter.field === "revGrowth" && filter.op === ">=" && Number(filter.value) === 10
-    && /\bdouble[- ]digit(?:s)?\b/i.test(phrase);
+  if (concept !== "revGrowth" || filter.field !== "revGrowth") return false;
+  return filter.op === ">=" && Number(filter.value) === 10 && /\bdouble[- ]digit(?:s)?\b/i.test(phrase)
+    || filter.op === ">" && Number(filter.value) === 0 && /\bpositive\s+(?:revenue|sales)\s+growth\b/i.test(phrase);
 }
 
 function conceptAllowsField(concept: string, field: string): boolean {
@@ -363,7 +376,15 @@ function groundedFilters(phrase: string, concept: string, basis: CriterionBasis,
   if (out.length === 2) {
     if (!isRangePhrase(phrase) || out.some((f) => f.field !== concept)) return null;
     if (!out.some((f) => f.op === ">=") || !out.some((f) => f.op === "<=")) return null;
+    const rangeText = phrase.slice(phrase.search(/\b(?:between|from)\b/i));
+    const endpoints = [...rangeText.matchAll(/-?\d+(?:\.\d+)?/g)].slice(0, 2)
+      .map((match) => groundedExplicitNumericValue(phrase, concept, Number(match[0])));
+    if (endpoints.length !== 2 || endpoints.some((value) => value === null)) return null;
+    const [lower, upper] = (endpoints as number[]).sort((a, b) => a - b);
+    if (!out.some((filter) => filter.op === ">=" && approximatelyEqual(Number(filter.value), lower))
+      || !out.some((filter) => filter.op === "<=" && approximatelyEqual(Number(filter.value), upper))) return null;
   }
+  if (isRangePhrase(phrase) && out.length !== 2) return null;
   return out;
 }
 
@@ -415,8 +436,16 @@ function semanticDefaultConcept(phrase: string, concept: string, rawFilters: unk
 }
 
 function compileCriterion(query: string, raw: RawCriterion): { item: CriterionLedgerItem; assumption?: string } | null {
-  const exactPhrase = exactPhraseFromQuery(query, raw.phrase);
+  let exactPhrase = exactPhraseFromQuery(query, raw.phrase);
   if (!exactPhrase) return null;
+  // A model may split "Dividend stocks yielding ..." before the yield
+  // predicate. Retain only that immediately adjacent, unambiguous scope.
+  if (Array.isArray(raw.filters) && raw.filters.some((filter) => (filter as { field?: unknown })?.field === "divYield")
+    && /^yield(?:ing)?\b/i.test(exactPhrase)) {
+    const start = query.toLowerCase().indexOf(exactPhrase.toLowerCase());
+    const scope = /\bdividend(?:-paying)?\s+(?:(?:stocks?|companies|names|shares)\s+)?$/i.exec(query.slice(0, start));
+    if (scope) exactPhrase = query.slice(scope.index, start + exactPhrase.length);
+  }
   let concept = canonicalConcept(raw.concept);
   const originalConcept = concept;
   let basis = raw.basis as CriterionBasis;
@@ -445,7 +474,7 @@ function compileCriterion(query: string, raw: RawCriterion): { item: CriterionLe
 
   if (basis === "parse_default") {
     const spec = DEFAULTS[concept];
-    if (!spec) {
+    if (!spec || concept === "high_roic" && /\bquality\b/i.test(phrase) && !/\broic\b|\breturn\w*\s+on\s+(?:the\s+)?invested\s+capital\b/i.test(phrase)) {
       const why = "That concept does not have a documented Parse default.";
       return { item: { phrase, concept, basis: "unresolved", status: "unresolved", filters: [], resolution: "unresolved", normalizations: [], reason: why }, assumption: unresolvedMessage(phrase, why) };
     }
@@ -477,10 +506,15 @@ function compileLedger(query: string, rawCriteria: RawCriterion[]) {
   const ledger: CriterionLedgerItem[] = [];
   const filters: Filter[] = [];
   const assumptions: string[] = [];
-  for (const raw of rawCriteria) {
-    const compiled = compileCriterion(query, raw);
-    if (!compiled) continue;
+  const compiledCriteria = rawCriteria.map((raw) => compileCriterion(query, raw)).filter((item): item is NonNullable<typeof item> => Boolean(item));
+  const explicitFields = new Set(compiledCriteria.flatMap(({ item }) => item.basis === "explicit" && item.status === "mapped" ? item.filters.map((filter) => filter.field) : []));
+  for (const compiled of compiledCriteria) {
     let item = compiled.item;
+    if (item.status === "defaulted" && item.filters.some((filter) => explicitFields.has(filter.field))) {
+      const label = FIELDS[item.filters[0].field].label;
+      item = { ...item, filters: [], normalizations: [...item.normalizations, "explicit criterion overrides default"] };
+      compiled.assumption = `Read “${item.phrase}” using your explicit ${label} criterion instead of Parse's default.`;
+    }
     if (item.filters.length) {
       const candidate = [...filters];
       for (const filter of item.filters) if (!candidate.some((x) => sameFilter(x, filter))) candidate.push(filter);
@@ -514,7 +548,7 @@ function extractionSystem(): string {
     "Sector/industry requirements: infer the closest controlled sector from meaning, not a word list. Use concept=sector, basis=semantic, and one sector filter whose value is exactly one supplied sector. Preserve exclusions with op=!=. If the business category does not imply one supplied sector with high confidence, mark it unresolved.",
     `Common sector language (examples, not an exhaustive vocabulary): ${sectorLexiconPrompt()}. Infer semantically when the user's wording is absent from these examples.`,
     "Qualitative defaults allowed ONLY: profitable means the user requires the business to currently make a profit=>Operating Margin >0; low_debt means the user requires low leverage or indebtedness=>D/E <1; high_roic means the user requires strong return on invested capital=>ROIC >15; reasonable_valuation means the user requires a non-expensive or fair valuation=>P/E <25; growth_stock means the user requests a growth stock without stating a growth number=>Revenue Growth >15. Recognize these meanings regardless of wording. Use basis=parse_default and the exact concept key.",
-    "Double-digit revenue/sales growth may be concept=revGrowth,basis=semantic,filter revGrowth>=10. No other invented semantic threshold.",
+    "Double-digit revenue/sales growth may be concept=revGrowth,basis=semantic,filter revGrowth>=10. Positive revenue/sales growth means revGrowth>0, basis=semantic. No other invented semantic threshold. Generic quality alone is unresolved; it must not become high_roic. Explicit numeric criteria override defaults for the same field.",
     "If supported but ambiguous, basis=unresolved. If Parse has no suitable field, basis=unsupported. Both must retain the phrase.",
     "Every phrase must be an exact contiguous substring of the request. Each ledger item must contain exactly one meaning; split a business scope and a financial condition into separate items even when adjacent.",
     `Ranking only when explicitly requested: ${Object.keys(RANKINGS).join(", ")}; otherwise null.`,
@@ -709,6 +743,23 @@ const RANKING_INTENTS: Array<{ key: string; pattern: RegExp }> = [
   { key: "marketCap", pattern: /\b(?:rank(?:ed)?|sort(?:ed)?|order(?:ed)?)\s+(?:by\s+)?(?:the\s+)?(?:largest|market cap(?:italization)?)\b|\blargest\s+first\b/i },
 ];
 
+function requestedRanking(query: string, extracted: unknown): string {
+  if (/\b(?:do not|don't|never|without)\s+(?:rank|sort|order)\b/i.test(query)) return "marketCap";
+  const explicit = RANKING_INTENTS.find((intent) => intent.pattern.test(query));
+  if (explicit) return explicit.key;
+  if (/\bhighest\s+(?:dividend\s+)?yield\b/i.test(query)) return "dividend";
+  if (/\bhighest\s+(?:revenue\s+)?growth\b/i.test(query)) return "quality";
+  if (/\bstrongest\s+momentum\b/i.test(query)) return "momentum";
+  if (/\bmost\s+beaten[- ]down\b/i.test(query)) return "decline";
+  if (/\brank\s+by\s+p\/?e\b/i.test(query)) return "value";
+  // Keep supported interpretations of explicit ordering language while
+  // avoiding an implicit sort from a bare financial criterion.
+  if (/\b(?:rank(?:ed)?|sort(?:ed)?|order(?:ed)?|prioriti[sz]e)\b/i.test(query)
+    && typeof extracted === "string" && RANKINGS[extracted]) return extracted;
+  if (/\bhighest\s+roic\b/i.test(query)) return "roic";
+  return "marketCap";
+}
+
 function meaningfulCoverageIssues(query: string, ledger: CriterionLedgerItem[], ranking: string): Issue[] {
   const issues: Issue[] = [];
   const ranges = phraseRanges(query, ledger);
@@ -817,7 +868,7 @@ export async function parseWithCriterionLedgerV2(query: string, completion: Comp
   const contractMismatches = detectContractMismatches(query, rawCriteria);
   const extractedCriteria = applySectorLexiconBackstop(query, rawCriteria);
   let compiled = compileLedger(query, extractedCriteria);
-  const ranking = typeof extraction.ranking === "string" && RANKINGS[extraction.ranking] ? extraction.ranking : "marketCap";
+  const ranking = requestedRanking(query, extraction.ranking);
   const coverageTelemetry = uncoveredInputIssues(query, compiled.ledger).map((issue) => issue.phrase);
   const coverageIssues = normalizeIssues(query, extraction.coverage_issues);
   const firstIssues = combineIssues(coverageIssues, sectorLexiconIssues(query, compiled.ledger), meaningfulCoverageIssues(query, compiled.ledger, ranking), unresolvedIssues(compiled.ledger));
