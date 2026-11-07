@@ -5,6 +5,7 @@ const f = (field: string, op: string, value: number | string) => ({ field, op, v
 const criterion = (phrase: string, concept: string, filters: unknown[], basis = "explicit") => ({ phrase, concept, basis, filters });
 const key = (v: { field: string; op: string; value: unknown }) => `${v.field}|${v.op}|${v.value}`;
 const cases = [
+  { name: "affirmative sorting survives another negated sort", query: "Do not sort by dividend yield; sort by ROIC", criteria: [], expected: [], ranking: "roic", expectedRanking: "roic" },
   { name: "explicit ROIC sorting is retained", query: "ROIC above 15%, sort by ROIC", criteria: [criterion("ROIC above 15%", "roic", [f("roic", ">", 15)])], expected: [f("roic", ">", 15)], ranking: "roic", expectedRanking: "roic" },
   { name: "ordinary dividend sorting is retained", query: "Sort by dividend yield", criteria: [], expected: [], ranking: "dividend", expectedRanking: "dividend" },
   { name: "an implicit sort is not invented", query: "ROIC above 15%", criteria: [criterion("ROIC above 15%", "roic", [f("roic", ">", 15)])], expected: [f("roic", ">", 15)], ranking: "roic", expectedRanking: "marketCap" },

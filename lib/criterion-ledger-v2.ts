@@ -744,7 +744,8 @@ const RANKING_INTENTS: Array<{ key: string; pattern: RegExp }> = [
 ];
 
 function requestedRanking(query: string, extracted: unknown): string {
-  if (/\b(?:do not|don't|never|without)\s+(?:rank|sort|order)\b/i.test(query)) return "marketCap";
+  query = query.split(/[;,]|\bbut\b|\binstead\b|\band (?=(?:rank|sort|order)\b)/i)
+    .filter((clause) => !/\b(?:do not|don't|never|without)\s+(?:rank|sort|order)\b/i.test(clause)).join(" ");
   const explicit = RANKING_INTENTS.find((intent) => intent.pattern.test(query));
   if (explicit) return explicit.key;
   if (/\bhighest\s+(?:dividend\s+)?yield\b/i.test(query)) return "dividend";
