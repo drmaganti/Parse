@@ -11,6 +11,7 @@ import { runScreen, type ScreenResult } from "../lib/screen";
 import { decodeScreenState, screenFingerprint, screenSlug } from "../lib/screen-state";
 import { PUBLIC_SCREENS, publicScreenFilters, type PublicScreen } from "../lib/publicScreens";
 import { identifyAnalyticsUser, resetAnalyticsUser, trackEvent } from "../lib/analytics";
+import { PENDING_SCREEN_STORAGE_KEY } from "../lib/growth-handoff";
 
 const T = {
   bg: "#F4F5F7", surface: "#FFFFFF", surfaceAlt: "#FAFBFC",
@@ -165,7 +166,7 @@ function Screener({ user }: { user: UserState }) {
           const signupHandoff = params.get("source") === "signup_handoff";
           trackEvent("screen_results_viewed", { entry: signupHandoff ? "signup_handoff" : "shared_screen", result_count: initialResults.length });
           if (signupHandoff) {
-            window.sessionStorage.removeItem("parse_pending_signup_screen");
+            try { window.localStorage.removeItem(PENDING_SCREEN_STORAGE_KEY); } catch {}
             trackEvent("signup_handoff_restored", { result_count: initialResults.length });
             setToast("Your screen is ready. Select Save screen to keep it.");
           }
