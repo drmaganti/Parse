@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import { trackEvent } from "../../lib/analytics";
-import { decodeScreenState } from "../../lib/screen-state";
+import { authenticatedHandoffHref, validatedGuestScreenState } from "../../lib/growth-handoff";
 import ParseBrand from "../../components/ParseBrand";
 
 const T = { bg: "#F4F5F7", surface: "#FFFFFF", border: "#E6E8EC", ink: "#15171C", inkSoft: "#565C67", accent: "#2C36A8", accentInk: "#232A85", loss: "#C33328" };
@@ -12,22 +12,19 @@ const DISP = "var(--font-display), 'Instrument Sans', system-ui, sans-serif";
 const PENDING_SCREEN_KEY = "parse_pending_signup_screen";
 
 function pendingScreenState(): string | null {
-  const param = new URLSearchParams(window.location.search).get("state");
-  const fromUrl = param && param.length <= 6000 ? decodeScreenState(param) : null;
-  if (fromUrl && fromUrl.q.length <= 320 && fromUrl.filters.length <= 30 && !fromUrl.universe) {
-    window.sessionStorage.setItem(PENDING_SCREEN_KEY, param!);
-    return param;
+  const fromUrl = validatedGuestScreenState(new URLSearchParams(window.location.search).get("state"));
+  if (fromUrl) {
+    window.sessionStorage.setItem(PENDING_SCREEN_KEY, fromUrl);
+    return fromUrl;
   }
-  const stored = window.sessionStorage.getItem(PENDING_SCREEN_KEY);
-  const parsed = stored && stored.length <= 6000 ? decodeScreenState(stored) : null;
-  if (parsed && parsed.q.length <= 320 && parsed.filters.length <= 30 && !parsed.universe) return stored;
+  const stored = validatedGuestScreenState(window.sessionStorage.getItem(PENDING_SCREEN_KEY));
+  if (stored) return stored;
   window.sessionStorage.removeItem(PENDING_SCREEN_KEY);
   return null;
 }
 
 function authenticatedDestination(): string {
-  const state = pendingScreenState();
-  return state ? `/app?state=${encodeURIComponent(state)}&source=signup_handoff` : "/app";
+  return authenticatedHandoffHref(pendingScreenState());
 }
 
 export default function Account() {
