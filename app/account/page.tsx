@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
-import { trackEvent } from "../../lib/analytics";
+import { identifyAnalyticsUser, trackEvent } from "../../lib/analytics";
 import { authenticatedHandoffHref, validatedGuestScreenState } from "../../lib/growth-handoff";
 import ParseBrand from "../../components/ParseBrand";
 
@@ -40,7 +40,7 @@ export default function Account() {
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("mode") === "signin") setMode("signin");
     setHasPendingScreen(Boolean(pendingScreenState()));
-    supabase.auth.getSession().then(({ data }) => { if (data.session) router.replace(authenticatedDestination()); });
+    supabase.auth.getSession().then(({ data }) => { if (data.session) { identifyAnalyticsUser(data.session.user.id); router.replace(authenticatedDestination()); } });
   }, [router]);
 
   const submit = async () => {
@@ -55,14 +55,16 @@ export default function Account() {
         if (error) throw error;
         trackEvent("signup_submitted", { email_confirmation_required: !data.session, has_screen_handoff: hasPendingScreen });
         if (data.session) {
+          identifyAnalyticsUser(data.session.user.id);
           trackEvent("signup_completed", { email_confirmation_required: false, has_screen_handoff: hasPendingScreen });
           router.replace(authenticatedDestination());
         } else setNote(hasPendingScreen
           ? "Check your email to confirm your account, then sign in here on this device to return to your screen."
           : "Account created. Check your email to confirm it, then sign in.");
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password: pw });
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password: pw });
         if (error) throw error;
+        identifyAnalyticsUser(data.user.id);
         trackEvent("signin_completed");
         router.replace(authenticatedDestination());
       }
