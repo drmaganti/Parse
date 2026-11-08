@@ -31,7 +31,7 @@ Only identify signed-in users in PostHog, using the stable Supabase auth UID. Re
 - Safeguard: collection-specific universes cannot be faithfully restored in the signed-in screener yet; do not promise an exact handoff for those screens.
 - Test: state round-trip, invalid/oversized states, email-confirmation same-browser path, login, logout, no-results, guest-limit edge case, and manual vs preloaded tracking.
 - Decisions after enough observations: keep if users save and return; otherwise inspect the session recordings/qualitative feedback before changing the gate.
-- Limitation: in-progress signup state is held in the same browser session while email confirmation is pending; other-device confirmation is not guaranteed to restore the screen.
+- Limitation: pending signup state is stored in the same browser for up to 24 hours, across tabs, and cleared after successful restoration. Confirmation/sign-in on another device cannot restore the screen automatically.
 
 ## Experiment 2 — 20 qualified investor interviews
 Recruit self-directed US-stock investors who have screened stocks with other tools (not friends doing courtesy signups). Include a mix of novices and repeat screeners. Tasks:
