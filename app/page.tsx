@@ -10,7 +10,7 @@ import { findFilterConflict, mergeDefaults, sameFilter } from "../lib/filter-ops
 import { runScreen, type ScreenResult } from "../lib/screen";
 import { decodeScreenState, screenFingerprint, screenSlug } from "../lib/screen-state";
 import { PUBLIC_SCREENS, publicScreenFilters, type PublicScreen } from "../lib/publicScreens";
-import { trackEvent } from "../lib/analytics";
+import { identifyAnalyticsUser, resetAnalyticsUser, trackEvent } from "../lib/analytics";
 
 const T = {
   bg: "#F4F5F7", surface: "#FFFFFF", surfaceAlt: "#FAFBFC",
@@ -54,11 +54,12 @@ export default function Page() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       const u = data.session?.user;
-      if (u?.email) setUser({ id: u.id, email: u.email, metadata: u.user_metadata ?? {} });
+      if (u?.email) { identifyAnalyticsUser(u.id); setUser({ id: u.id, email: u.email, metadata: u.user_metadata ?? {} }); }
       setBooting(false);
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
       const u = session?.user;
+      if (u?.email) identifyAnalyticsUser(u.id);
       setUser(u?.email ? { id: u.id, email: u.email, metadata: u.user_metadata ?? {} } : null);
     });
     return () => sub.subscription.unsubscribe();
@@ -371,7 +372,7 @@ function Screener({ user }: { user: UserState }) {
   };
 
   return <div className="scr-root">
-    <TopBar email={user.email} onSignOut={() => supabase.auth.signOut()} />
+    <TopBar email={user.email} onSignOut={async () => { const { error } = await supabase.auth.signOut(); if (!error) resetAnalyticsUser(); }} />
     <main style={{ maxWidth: 1120, margin: "0 auto", padding: "30px 24px 80px" }}>
       <section>
         <h1 className="disp" style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.02em", margin: "0 0 5px" }}>{reviewing ? "Review the interpretation" : hasRun ? "Refine this screen" : "Describe the screen you want"}</h1>
