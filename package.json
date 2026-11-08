@@ -29,7 +29,8 @@
     "eval:criterion-ledger-blind50-part2": "tsx eval/criterion-ledger-blind-50-v1-part2.ts",
     "eval:offline": "OFFLINE=1 tsx eval/run.ts",
     "test:p0-parser": "npm run test:parser-contract && npm run test:composite-regressions && npm run test:liquidity && npm run eval:offline",
-    "test:retail-full": "npm run test:investor-language && npm run eval:moneyflock50 && npm run test:p0-parser && npm run eval:composite100 && npm run eval:retail100 && npm run eval:holdout100"
+    "test:retail-full": "npm run test:investor-language && npm run eval:moneyflock50 && npm run test:p0-parser && npm run eval:composite100 && npm run eval:retail100 && npm run eval:holdout100",
+    "test:growth-handoff": "tsx eval/growth-signup-handoff-regressions.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
