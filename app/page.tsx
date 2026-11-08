@@ -119,6 +119,7 @@ function Screener({ user }: { user: UserState }) {
   const [dataErr, setDataErr] = useState("");
   const [conflict, setConflict] = useState("");
   const stocksRef = useRef<StockRow[]>([]);
+  const initialScreenTracked = useRef(false);
   const preferencesReady = true;
 
   const flash = (m: string) => { setToast(m); window.setTimeout(() => setToast(""), 2200); };
@@ -155,8 +156,19 @@ function Screener({ user }: { user: UserState }) {
         setScreenQuery(dec.q); setFilters(dec.filters); setRanking(dec.ranking);
         setInterp(params.get("source")?.startsWith("public_screen:") ? "Loaded exact saved criteria for this popular screen." : "Restored a shared screen.");
         const issue = findFilterConflict(dec.filters); setConflict(issue || "");
-        setResults(issue ? [] : runScreen(rows as StockRow[], dec.filters, dec.ranking, Infinity));
+        const initialResults = issue ? [] : runScreen(rows as StockRow[], dec.filters, dec.ranking, Infinity);
+        setResults(initialResults);
         setHasRun(true); setReviewing(false);
+        if (!issue && !initialScreenTracked.current) {
+          initialScreenTracked.current = true;
+          const signupHandoff = params.get("source") === "signup_handoff";
+          trackEvent("screen_results_viewed", { entry: signupHandoff ? "signup_handoff" : "shared_screen", result_count: initialResults.length });
+          if (signupHandoff) {
+            window.sessionStorage.removeItem("parse_pending_signup_screen");
+            trackEvent("signup_handoff_restored", { result_count: initialResults.length });
+            setToast("Your screen is ready. Select Save screen to keep it.");
+          }
+        }
       }
     })();
   }, []);
@@ -210,6 +222,7 @@ function Screener({ user }: { user: UserState }) {
     setResults(nextResults); setHasRun(true); setReviewing(false); setSort(null); setShowAll(false);
     syncUrl(screenQuery, filters, ranking, true);
     trackEvent("screen_run_success", { filter_count: filters.length, result_count: nextResults.length, confirmed_interpretation: true });
+    trackEvent("screen_results_viewed", { entry: "authenticated_run", result_count: nextResults.length });
   };
 
   const resetScreen = () => {
