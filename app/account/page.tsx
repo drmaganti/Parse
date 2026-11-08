@@ -4,22 +4,24 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import { identifyAnalyticsUser, trackEvent } from "../../lib/analytics";
-import { authenticatedHandoffHref, validatedGuestScreenState } from "../../lib/growth-handoff";
+import { authenticatedHandoffHref, validatedGuestScreenState, encodePendingScreenRecord, decodePendingScreenRecord, PENDING_SCREEN_STORAGE_KEY } from "../../lib/growth-handoff";
 import ParseBrand from "../../components/ParseBrand";
 
 const T = { bg: "#F4F5F7", surface: "#FFFFFF", border: "#E6E8EC", ink: "#15171C", inkSoft: "#565C67", accent: "#2C36A8", accentInk: "#232A85", loss: "#C33328" };
 const DISP = "var(--font-display), 'Instrument Sans', system-ui, sans-serif";
-const PENDING_SCREEN_KEY = "parse_pending_signup_screen";
-
 function pendingScreenState(): string | null {
   const fromUrl = validatedGuestScreenState(new URLSearchParams(window.location.search).get("state"));
   if (fromUrl) {
-    window.sessionStorage.setItem(PENDING_SCREEN_KEY, fromUrl);
+    const record = encodePendingScreenRecord(fromUrl);
+    try { if (record) window.localStorage.setItem(PENDING_SCREEN_STORAGE_KEY, record); } catch {}
     return fromUrl;
   }
-  const stored = validatedGuestScreenState(window.sessionStorage.getItem(PENDING_SCREEN_KEY));
-  if (stored) return stored;
-  window.sessionStorage.removeItem(PENDING_SCREEN_KEY);
+
+  try {
+    const stored = decodePendingScreenRecord(window.localStorage.getItem(PENDING_SCREEN_STORAGE_KEY));
+    if (stored) return stored;
+    window.localStorage.removeItem(PENDING_SCREEN_STORAGE_KEY);
+  } catch {}
   return null;
 }
 
