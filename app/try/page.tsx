@@ -8,6 +8,7 @@ import { runScreen, type ScreenResult } from "../../lib/screen";
 import { trackEvent } from "../../lib/analytics";
 import { decodeScreenState, encodeScreenState, type ScreenUniverse } from "../../lib/screen-state";
 import ParseBrand from "../../components/ParseBrand";
+import { signupHandoffHref, validatedGuestScreenState } from "../../lib/growth-handoff";
 
 const T = {
   bg: "#F4F5F7", surface: "#FFFFFF", surfaceAlt: "#FAFBFC", border: "#E6E8EC", borderStrong: "#D4D8DF",
@@ -104,7 +105,9 @@ export default function TryPage() {
       if (exact) {
         const issue = findFilterConflict(exact.filters);
         setInput(exact.q); setLastInterpretedInput(exact.q); setScreenQuery(exact.q); setFilters(exact.filters); setRanking(exact.ranking); setConflict(issue || "");
-        setResults(issue ? [] : runScreen(rows, exact.filters, exact.ranking, 25)); setHasRun(true); setInterpretation(params.get("source")?.startsWith("public_screen:") ? "Loaded exact saved criteria for this popular screen." : "Loaded an exact shared screen.");
+        const initialResults = issue ? [] : runScreen(rows, exact.filters, exact.ranking, 25);
+        setResults(initialResults); setHasRun(true); setInterpretation(params.get("source")?.startsWith("public_screen:") ? "Loaded exact saved criteria for this popular screen." : "Loaded an exact shared screen.");
+        if (!issue) trackEvent("screen_results_viewed", { entry: params.get("source")?.startsWith("public_screen:") ? "curated_screen" : "shared_screen", result_count: initialResults.length, source: acquisitionSource() });
       } else if (initialQuery) setInput(initialQuery.slice(0, 320));
       else if (!previewGuestLimit) {
         const savedQuery = window.localStorage.getItem("parse_guest_last_query");
@@ -170,6 +173,7 @@ export default function TryPage() {
       setResults(nextResults); setHasRun(true); setReviewing(false); setReviewBase(null); setPendingRefine(false);
       setRuns(countBody.runs); setSort(null);
       trackEvent("screen_run_success", { guest_run: countBody.runs, refine: pendingRefine, filter_count: filters.length, result_count: nextResults.length, source: acquisitionSource() });
+      trackEvent("screen_results_viewed", { entry: "guest_run", result_count: nextResults.length, source: acquisitionSource() });
     } catch (e: any) {
       setError(e?.message || "Could not run this screen.");
     } finally {
@@ -269,6 +273,11 @@ export default function TryPage() {
 
   const headerStyle = (align: "left" | "right"): React.CSSProperties => ({ textAlign: align, padding: "8px", borderBottom: `1px solid ${T.border}`, color: T.inkSoft, fontSize: 11.5, cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" });
   const limitReached = runs >= 3;
+  // The signed-in screener supports the default stock universe. Do not promise
+  // to restore collection-specific results until authenticated collections are supported.
+  const handoffState = hasRun && !reviewing && !conflict && !universe && (screenQuery || input.trim())
+    ? validatedGuestScreenState(encodeScreenState({ q: screenQuery || input.trim(), filters, ranking })) : null;
+  const signupHref = signupHandoffHref(handoffState);
 
   return <div style={{ minHeight: "100vh", background: T.bg, color: T.ink, fontFamily: "var(--font-body), 'Inter', system-ui, sans-serif" }}>
     <header style={{ borderBottom: `1px solid ${T.border}` }}><div style={{ maxWidth: 960, margin: "0 auto", padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><ParseBrand /><div style={{ display: "flex", gap: 14, alignItems: "center" }}><a className="p-link mobile-hide" href="/screens">Screen ideas</a><a className="p-link mobile-hide" href="/methodology">How it works</a><a className="p-link" href="/account?mode=signin">Sign in</a></div></div></header>
@@ -279,7 +288,7 @@ export default function TryPage() {
         <textarea id="screen-description" className="p-query" aria-label="Screen description" value={input} readOnly={limitReached || loading} aria-disabled={limitReached || undefined} aria-busy={loading || undefined} aria-describedby={limitReached ? "guest-limit-message" : undefined} maxLength={320} onChange={(e) => changeInput(e.target.value)} placeholder={hasRun ? "Edit your sentence to update this screen" : "Example: large companies with low P/E ratios"} onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); execute(); } }} />
         <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}><span style={{ color: T.inkSoft, fontSize: 12.5 }}>{runs}/3 guest screens run</span><div style={{ display: "flex", gap: 8 }}>{hasRun && !reviewing && !limitReached && <button className="p-btn-neutral" onClick={resetScreen}>New screen</button>}{!reviewing && !limitReached && <button className="p-btn" onClick={execute} disabled={!stocks.length || loading || !input.trim() || input.trim() === lastInterpretedInput}>{loading ? "Reading…" : hasRun ? "Update screen" : "Interpret screen"}</button>}</div></div>
         {error && <div style={{ color: T.loss, marginTop: 10, fontSize: 13.5 }}>{error}</div>}
-        {limitReached && !reviewing && <GuestLimitCard />}
+        {limitReached && !reviewing && <GuestLimitCard signupHref={signupHref} hasHandoff={Boolean(handoffState)} />}
       </section>
 
       {(hasRun || reviewing) && <section style={{ background: T.surface, border: `1px solid ${reviewing ? "#C9CEF3" : T.border}`, borderRadius: 14, padding: 18, marginTop: 24 }}>
@@ -293,7 +302,7 @@ export default function TryPage() {
       </section>}
 
       {hasRun && !reviewing && !conflict && <section style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: 18, marginTop: 16 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}><div style={{ fontFamily: DISP, fontSize: 18, fontWeight: 600 }}>{results.length} matches{sort ? ` · sorted ${sort.dir === "asc" ? "ascending" : "descending"}` : ""}</div><div style={{ display: "flex", gap: 9, alignItems: "center" }}><button className="p-btn-neutral" onClick={shareScreen}>Share screen</button>{shareNote && <span style={{ color: T.inkSoft, fontSize: 12.5 }}>{shareNote}</span>}</div></div>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}><div style={{ fontFamily: DISP, fontSize: 18, fontWeight: 600 }}>{results.length} matches{sort ? ` · sorted ${sort.dir === "asc" ? "ascending" : "descending"}` : ""}</div><div style={{ display: "flex", gap: 9, alignItems: "center" }}><button className="p-btn-neutral" onClick={shareScreen}>Share screen</button><a className="p-btn" href={signupHref} style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }} onClick={() => trackEvent("screen_save_signup_clicked", { placement: "results", has_handoff: Boolean(handoffState), source: acquisitionSource() })}>{handoffState ? "Save screen free" : "Create free account"}</a>{shareNote && <span style={{ color: T.inkSoft, fontSize: 12.5 }}>{shareNote}</span>}</div></div>
         {results.length === 0 ? <div style={{ padding: "28px 4px", color: T.inkSoft, fontSize: 14 }}>No names match this screen. Loosen or remove a filter to widen it.</div> : <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", minWidth: 620 }}><thead><tr>
           <th aria-sort={ariaSort("symbol")} onClick={() => toggleSort("symbol")} style={headerStyle("left")}>Symbol{sortArrow("symbol")}</th>
           <th aria-sort={ariaSort("name")} onClick={() => toggleSort("name")} style={headerStyle("left")}>Company{sortArrow("name")}</th>
@@ -304,14 +313,14 @@ export default function TryPage() {
           {activeMetricCols.map((col) => <th key={String(col)} aria-sort={ariaSort(col)} onClick={() => toggleSort(col)} style={headerStyle("right")}>{fieldMetaForColumn(col)?.label || String(col)}{sortArrow(col)}</th>)}
           <th aria-sort={ariaSort("chg_1w")} onClick={() => toggleSort("chg_1w")} style={headerStyle("right")}>1W change{sortArrow("chg_1w")}</th>
         </tr></thead><tbody>{displayedResults.map((r) => <tr key={r.symbol}><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, fontFamily: MONO, fontSize: 13 }}>{r.symbol}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, fontSize: 13 }}>{r.name}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.price == null ? "—" : `$${Number(r.price).toFixed(2)}`}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.market_cap == null ? "—" : `$${Number(r.market_cap).toFixed(1)}B`}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.from_52w_high == null ? "—" : `${Number(r.from_52w_high).toFixed(1)}%`}</td><td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{r.pe == null ? "—" : Number(r.pe).toFixed(1)}</td>{activeMetricCols.map((col) => <td key={String(col)} style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{formatMetricCell(col, r[col])}</td>)}<td style={{ padding: 8, borderBottom: `1px solid ${T.border}`, textAlign: "right", fontFamily: MONO, fontSize: 13, color: (r.chg_1w ?? 0) >= 0 ? T.gain : T.loss }}>{r.chg_1w == null ? "—" : `${Number(r.chg_1w).toFixed(1)}%`}</td></tr>)}</tbody></table></div>}
-        <div style={{ marginTop: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}><span style={{ color: T.inkSoft, fontSize: 13.5 }}>Research tool only; these are screen matches, not investment recommendations.</span>{!limitReached && <a href="/account?mode=signup" className="p-link">Create account to save →</a>}</div>
+        <div style={{ marginTop: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}><span style={{ color: T.inkSoft, fontSize: 13.5 }}>Research tool only; these are screen matches, not investment recommendations.</span>{!limitReached && <a href={signupHref} className="p-link" onClick={() => trackEvent("screen_save_signup_clicked", { placement: "footer", has_handoff: Boolean(handoffState), source: acquisitionSource() })}>{handoffState ? "Save this screen to your account →" : "Create free account →"}</a>}</div>
       </section>}
     </main>
   </div>;
 }
 
-function GuestLimitCard() {
-  return <section id="guest-limit-message" style={{ marginTop: 18, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: 22 }}><div style={{ fontFamily: DISP, fontWeight: 600, fontSize: 20, marginBottom: 6 }}>Like what you found? Keep screening with a free account.</div><div style={{ color: T.inkSoft, fontSize: 14, lineHeight: 1.5 }}>You’ve used all three guest screens. Create an account to continue your research.</div><ul className="signup-benefits"><li>Run and refine more screens</li><li>Save screens to revisit later</li><li>Access your saved screens anywhere</li></ul><a href="/account?mode=signup" className="p-btn" style={{ display: "inline-flex", alignItems: "center", textDecoration: "none" }} onClick={() => trackEvent("guest_limit_signup_clicked", { source: acquisitionSource() })}>Create free account</a><div style={{ color: T.inkSoft, fontSize: 12.5, marginTop: 10 }}>Already have an account? <a href="/account?mode=signin" className="p-link" style={{ fontSize: "inherit" }}>Sign in</a></div></section>;
+function GuestLimitCard({ signupHref, hasHandoff }: { signupHref: string; hasHandoff: boolean }) {
+  return <section id="guest-limit-message" style={{ marginTop: 18, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: 22 }}><div style={{ fontFamily: DISP, fontWeight: 600, fontSize: 20, marginBottom: 6 }}>Like what you found? Keep screening with a free account.</div><div style={{ color: T.inkSoft, fontSize: 14, lineHeight: 1.5 }}>You’ve used all three guest screens. Create an account to continue your research.</div><ul className="signup-benefits"><li>Run and refine more screens</li><li>Save screens to revisit later</li><li>Access your saved screens anywhere</li></ul><a href={signupHref} className="p-btn" style={{ display: "inline-flex", alignItems: "center", textDecoration: "none" }} onClick={() => { trackEvent("guest_limit_signup_clicked", { source: acquisitionSource() }); trackEvent("screen_save_signup_clicked", { placement: "guest_limit", has_handoff: hasHandoff, source: acquisitionSource() }); }}>Create free account</a><div style={{ color: T.inkSoft, fontSize: 12.5, marginTop: 10 }}>Already have an account? <a href="/account?mode=signin" className="p-link" style={{ fontSize: "inherit" }}>Sign in</a></div></section>;
 }
 
 function fieldMetaForColumn(col: keyof StockRow) { return Object.values(FIELDS).find((m) => m.col === col); }

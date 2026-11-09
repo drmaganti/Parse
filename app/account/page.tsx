@@ -3,11 +3,31 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
-import { trackEvent } from "../../lib/analytics";
+import { identifyAnalyticsUser, trackEvent } from "../../lib/analytics";
+import { authenticatedHandoffHref, validatedGuestScreenState, encodePendingScreenRecord, decodePendingScreenRecord, PENDING_SCREEN_STORAGE_KEY } from "../../lib/growth-handoff";
 import ParseBrand from "../../components/ParseBrand";
 
 const T = { bg: "#F4F5F7", surface: "#FFFFFF", border: "#E6E8EC", ink: "#15171C", inkSoft: "#565C67", accent: "#2C36A8", accentInk: "#232A85", loss: "#C33328" };
 const DISP = "var(--font-display), 'Instrument Sans', system-ui, sans-serif";
+function pendingScreenState(): string | null {
+  const fromUrl = validatedGuestScreenState(new URLSearchParams(window.location.search).get("state"));
+  if (fromUrl) {
+    const record = encodePendingScreenRecord(fromUrl);
+    try { if (record) window.localStorage.setItem(PENDING_SCREEN_STORAGE_KEY, record); } catch {}
+    return fromUrl;
+  }
+
+  try {
+    const stored = decodePendingScreenRecord(window.localStorage.getItem(PENDING_SCREEN_STORAGE_KEY));
+    if (stored) return stored;
+    window.localStorage.removeItem(PENDING_SCREEN_STORAGE_KEY);
+  } catch {}
+  return null;
+}
+
+function authenticatedDestination(): string {
+  return authenticatedHandoffHref(pendingScreenState());
+}
 
 export default function Account() {
   const router = useRouter();
@@ -17,10 +37,12 @@ export default function Account() {
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [hasPendingScreen, setHasPendingScreen] = useState(false);
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("mode") === "signin") setMode("signin");
-    supabase.auth.getSession().then(({ data }) => { if (data.session) router.replace("/app"); });
+    setHasPendingScreen(Boolean(pendingScreenState()));
+    supabase.auth.getSession().then(({ data }) => { if (data.session) { identifyAnalyticsUser(data.session.user.id); router.replace(authenticatedDestination()); } });
   }, [router]);
 
   const submit = async () => {
@@ -33,14 +55,20 @@ export default function Account() {
       if (mode === "signup") {
         const { data, error } = await supabase.auth.signUp({ email, password: pw });
         if (error) throw error;
-        trackEvent("signup_completed", { email_confirmation_required: !data.session });
-        if (data.session) router.replace("/app");
-        else setNote("Account created. Check your email to confirm it, then sign in.");
+        trackEvent("signup_submitted", { email_confirmation_required: !data.session, has_screen_handoff: hasPendingScreen });
+        if (data.session) {
+          identifyAnalyticsUser(data.session.user.id);
+          trackEvent("signup_completed", { email_confirmation_required: false, has_screen_handoff: hasPendingScreen });
+          router.replace(authenticatedDestination());
+        } else setNote(hasPendingScreen
+          ? "Check your email to confirm your account, then sign in here on this device to return to your screen."
+          : "Account created. Check your email to confirm it, then sign in.");
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password: pw });
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password: pw });
         if (error) throw error;
+        identifyAnalyticsUser(data.user.id);
         trackEvent("signin_completed");
-        router.replace("/app");
+        router.replace(authenticatedDestination());
       }
     } catch (e: any) {
       setError(e?.message || "Something went wrong.");
@@ -54,8 +82,8 @@ export default function Account() {
     <main style={{ width: "100%", maxWidth: 390 }}>
       <ParseBrand />
       <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, padding: 24, marginTop: 22 }}>
-        <h1 style={{ fontFamily: DISP, fontSize: 26, letterSpacing: "-0.02em", margin: "0 0 6px", fontWeight: 600 }}>{mode === "signup" ? "Save your screens" : "Welcome back"}</h1>
-        <p style={{ color: T.inkSoft, fontSize: 14.5, lineHeight: 1.5, margin: "0 0 22px" }}>{mode === "signup" ? "Create an account when you want to save and revisit your work." : "Sign in to reach your saved screens."}</p>
+        <h1 style={{ fontFamily: DISP, fontSize: 26, letterSpacing: "-0.02em", margin: "0 0 6px", fontWeight: 600 }}>{mode === "signup" ? (hasPendingScreen ? "Keep your screen" : "Save your screens") : "Welcome back"}</h1>
+        <p style={{ color: T.inkSoft, fontSize: 14.5, lineHeight: 1.5, margin: "0 0 22px" }}>{mode === "signup" ? (hasPendingScreen ? "Create a free account to return to your current screen, then save it to use again." : "Create an account when you want to save and revisit your work.") : (hasPendingScreen ? "Sign in to return to your current screen and save it." : "Sign in to reach your saved screens.")}</p>
         <label style={{ display: "block", fontSize: 13, fontWeight: 550, color: T.inkSoft, marginBottom: 6 }}>Email</label><input className="a-field" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
         <label style={{ display: "block", fontSize: 13, fontWeight: 550, color: T.inkSoft, margin: "14px 0 6px" }}>Password</label><input className="a-field" type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="At least 6 characters" onKeyDown={(e) => e.key === "Enter" && submit()} />
         {error && <div style={{ color: T.loss, fontSize: 13.5, marginTop: 12 }}>{error}</div>}{note && <div style={{ color: T.accentInk, fontSize: 13.5, marginTop: 12, lineHeight: 1.45 }}>{note}</div>}
