@@ -2,7 +2,7 @@ import type { Op } from "./fields";
 
 export type ScalarRelation = "gt" | "gte" | "lt" | "lte";
 export type SelectionMode = "include" | "exclude";
-export type NumericDomain = "direct" | "distance_below_high";
+export type NumericDomain = "direct" | "distance_below_high" | "weekly_decline";
 
 export interface LogicalConstraint {
   relation: ScalarRelation;
@@ -48,6 +48,8 @@ export function relationFromPhrase(phrase: string): ScalarRelation | null {
 export function logicalConstraintFromPhrase(phrase: string, field: string): LogicalConstraint | null {
   const domain: NumericDomain = field === "from52wHigh" && HIGH_REFERENCE.test(phrase)
     ? "distance_below_high"
+    : field === "chg1w" && /\b(?:down|declin(?:e|ed|ing)|fallen|lost)\b/i.test(phrase)
+    ? "weekly_decline"
     : "direct";
 
   // "Within X% of a high" means distance_below_high <= X even though the
@@ -67,7 +69,7 @@ export function logicalConstraintFromPhrase(phrase: string, field: string): Logi
 export function compileLogicalOperator(constraint: LogicalConstraint): Op {
   let relation = constraint.relation;
   if (constraint.selection === "exclude") relation = COMPLEMENT[relation];
-  if (constraint.domain === "distance_below_high") relation = DISTANCE_TO_STORED[relation];
+  if (constraint.domain === "distance_below_high" || constraint.domain === "weekly_decline") relation = DISTANCE_TO_STORED[relation];
   return RELATION_TO_OP[relation];
 }
 

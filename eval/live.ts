@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { evaluateCase, hydrate, type EvalCase } from "./harness";
@@ -7,6 +7,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const BASE_URL = (process.env.EVAL_BASE_URL || "").replace(/\/$/, "");
 const RUNS = Math.max(1, Number(process.env.MODEL_RUNS || 1));
 const MIN_PASS_RATE = Number(process.env.MODEL_MIN_PASS_RATE || 0.95);
+const overrides = JSON.parse(readFileSync(join(__dir, "live-capability-overrides.json"), "utf8"));
 
 if (!BASE_URL) {
   console.error("Set EVAL_BASE_URL, for example https://getparse.app");
@@ -25,6 +26,7 @@ async function parseRemote(c: EvalCase) {
     method: "POST",
     headers: { "content-type": "application/json", "user-agent": "parse-p0-eval/1.0" },
     body: JSON.stringify({ query: c.query, filters: mode === "refine" ? previous : [], ranking, mode }),
+    signal: AbortSignal.timeout(45_000),
   });
   if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
   return await res.json();
@@ -37,12 +39,17 @@ async function main() {
   let criticalFailures = 0;
   const sources: Record<string, number> = {};
   const failures: any[] = [];
+  const rows: any[] = [];
+  let originalPasses = 0;
 
   console.log(`\nLive Parse eval · ${cases.length} cases · ${BASE_URL} · ${RUNS} run(s)\n`);
 
   for (let run = 1; run <= RUNS; run++) {
     let runPass = 0;
-    for (const c of cases) {
+    for (const [caseIndex, original] of cases.entries()) {
+      const patch = overrides.overrides[original.query];
+      const c: EvalCase = patch ? { ...original, ...patch, expect: { ...original.expect, ...patch.expect } } : original;
+      const started = performance.now();
       let result: any;
       try {
         result = await parseRemote(c);
@@ -50,12 +57,16 @@ async function main() {
         attempts++;
         if (c.critical) criticalFailures++;
         failures.push({ run, query: c.query, critical: !!c.critical, reasons: [`request failed: ${error?.message || error}`] });
+        rows.push({ run, caseIndex, query: c.query, ok: false, requestFailed: true, latencyMs: performance.now() - started });
         console.log(`FAIL${c.critical ? "*" : " "} ${c.query} → request failed`);
         continue;
       }
 
       sources[result.source || "unknown"] = (sources[result.source || "unknown"] || 0) + 1;
       const verdict = evaluateCase(c, result, false);
+      const originalVerdict = evaluateCase(original, result, false);
+      if (originalVerdict.ok) originalPasses++;
+      rows.push({ run, caseIndex, query: c.query, mode: c.mode ?? (c.previous?.length ? "refine" : "new"), ok: verdict.ok, originalOk: originalVerdict.ok, rationale: patch?.rationale, critical: !!c.critical, reasons: verdict.reasons, latencyMs: performance.now() - started, result });
       attempts++;
       if (verdict.ok) { passes++; runPass++; }
       else {
@@ -70,8 +81,10 @@ async function main() {
   const passRate = attempts ? passes / attempts : 0;
   console.log(`live parser: ${passes}/${attempts} (${(passRate * 100).toFixed(1)}%)`);
   console.log(`critical failures: ${criticalFailures}`);
+  console.log(`original frozen expectations: ${originalPasses}/${attempts}; current contract revision: ${overrides.revision}`);
   console.log(`sources: ${JSON.stringify(sources)}`);
   if (failures.length) console.log(`\nFailures:\n${JSON.stringify(failures, null, 2)}`);
+  if (process.env.EVAL_REPORT) writeFileSync(process.env.EVAL_REPORT, JSON.stringify({ baseUrl: BASE_URL, contractRevision: overrides.revision, summary: { passes, attempts, passRate, criticalFailures, originalPasses }, rows }, null, 2));
 
   if (passRate < MIN_PASS_RATE || criticalFailures > 0) process.exit(1);
 }

@@ -19,6 +19,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run test:criterion-ledger-v2
+      - run: npm run test:weekly-trust
       - run: npm run test:investor-language
       - name: Run MoneyFlock-style 50-query gate
         shell: bash

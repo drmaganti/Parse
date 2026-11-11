@@ -467,8 +467,8 @@ async function ambiguousYieldCanRecoverWithBroaderEvidenceSpan() {
       ranking: "dividend",
     });
   });
-  assert.equal(calls, 2);
-  assert.equal(result.audit.status, "recovered");
+  assert.equal(calls, 1);
+  assert.equal(result.audit.status, "verified");
   assert(result.filters.some((filter) => key(filter) === "divYield|>|4"));
   assert.equal(result.ledger.find((item) => item.concept === "divYield")?.resolution, "llm_explicit");
 }

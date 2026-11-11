@@ -18,8 +18,9 @@ async function loadScreen(slug: string): Promise<Shared | null> {
   return data as Shared | null;
 }
 
-export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
-  const screen = await loadScreen(params.slug);
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const screen = await loadScreen(slug);
   if (!screen) return { title: "Shared stock screen" };
   const title = `${screen.title} | Parse`;
   const description = screen.query ? `Run and edit this exact stock screen in Parse: ${screen.query.slice(0, 150)}` : `Run and edit ${screen.title} in Parse.`;
@@ -42,8 +43,9 @@ function formatFilter(f: Filter) {
   return `${m.label} ${f.op} ${f.value}${m.unit === "%" ? "%" : m.unit === "$B" ? "B" : ""}`;
 }
 
-export default async function SharedScreen({ params }: { params: { slug: string } }) {
-  const screen = await loadScreen(params.slug);
+export default async function SharedScreen({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const screen = await loadScreen(slug);
   if (!screen) notFound();
   const { data: stockData } = await supabaseServer.from("stocks").select("*");
   const rows = (stockData ?? []) as StockRow[];

@@ -12,8 +12,9 @@ export function generateStaticParams() {
   return MARKETING_PAGES.map((page) => ({ marketing: page.slug }));
 }
 
-export function generateMetadata({ params }: { params: { marketing: string } }): Metadata {
-  const page = getMarketingPage(params.marketing);
+export async function generateMetadata({ params }: { params: Promise<{ marketing: string }> }): Promise<Metadata> {
+  const { marketing } = await params;
+  const page = getMarketingPage(marketing);
   if (!page) return {};
   const image = `/api/og?title=${encodeURIComponent(page.headline)}&subtitle=${encodeURIComponent(page.description)}`;
   return {
@@ -25,8 +26,9 @@ export function generateMetadata({ params }: { params: { marketing: string } }):
   };
 }
 
-export default function MarketingPage({ params }: { params: { marketing: string } }) {
-  const page = getMarketingPage(params.marketing);
+export default async function MarketingPage({ params }: { params: Promise<{ marketing: string }> }) {
+  const { marketing } = await params;
+  const page = getMarketingPage(marketing);
   if (!page) notFound();
   const related = PUBLIC_SCREENS.slice(0, 6);
   const faqJsonLd = { "@context": "https://schema.org", "@type": "FAQPage", mainEntity: page.faq.map((item) => ({ "@type": "Question", name: item.q, acceptedAnswer: { "@type": "Answer", text: item.a } })) };
