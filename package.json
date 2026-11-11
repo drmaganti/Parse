@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run test:growth-handoff && next build",
     "start": "next start",
     "ingest": "tsx scripts/ingest.ts",
     "backfill:analyst-targets": "tsx scripts/backfill-analyst-targets.ts",
@@ -30,7 +30,8 @@
     "eval:offline": "OFFLINE=1 tsx eval/run.ts",
     "test:p0-parser": "npm run test:parser-contract && npm run test:composite-regressions && npm run test:liquidity && npm run eval:offline",
     "test:retail-full": "npm run test:investor-language && npm run eval:moneyflock50 && npm run test:p0-parser && npm run eval:composite100 && npm run eval:retail100 && npm run eval:holdout100",
-    "test:weekly-trust": "node --import tsx eval/weekly-trust-regressions.ts"
+    "test:weekly-trust": "node --import tsx eval/weekly-trust-regressions.ts",
+    "test:growth-handoff": "tsx eval/growth-signup-handoff-regressions.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
